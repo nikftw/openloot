@@ -35,6 +35,7 @@ function Frame:Ensure()
 	self.frame = frame
 	self.rows = {}
 	self.showAll = false
+	self.onlyVoted = false
 
 	local scroll = OL.UI:CreateScroll(frame.content)
 	scroll:SetPoint("TOPLEFT", 0, 0)
@@ -51,6 +52,18 @@ function Frame:Ensure()
 	self.toggle:SetScript("OnClick", function()
 		self.showAll = not self.showAll
 		self.toggle:SetText(self.showAll and "Show usable" or "Show all")
+		self:Refresh()
+	end)
+
+	self.voted = OL.UI:FlatButton(frame.content, "Only voted", 92, 18)
+	self.voted:SetPoint("BOTTOMLEFT", self.toggle, "BOTTOMRIGHT", 4, 0)
+	self.voted:SetScript("OnClick", function()
+		self.onlyVoted = not self.onlyVoted
+		if self.onlyVoted then
+			self.voted:SetBaseColor(0.22, 0.26, 0.32, 1)
+		else
+			self.voted:SetBaseColor(0.16, 0.16, 0.18, 1)
+		end
 		self:Refresh()
 	end)
 end
@@ -70,6 +83,10 @@ local function usable(item)
 	return OL.Items:PlayerCanUse(item.link, item.equipLoc, item.classID, item.subClassID)
 end
 
+local function caresAbout(item)
+	return item.myResponse == "BIS" or item.myResponse == "UPGRADE" or item.myResponse == "OFFSPEC"
+end
+
 function Frame:Refresh()
 	if not self.frame or not self.frame:IsShown() or self.refreshing then
 		return
@@ -79,9 +96,18 @@ function Frame:Refresh()
 	local items = session and session.items or {}
 	local visible = {}
 	for index, item in ipairs(items) do
-		if self.showAll or usable(item) then
+		local shown = self.showAll or usable(item)
+		if shown and self.onlyVoted then
+			shown = caresAbout(item)
+		end
+		if shown then
 			visible[#visible + 1] = { index = index, item = item }
 		end
+	end
+	if self.onlyVoted then
+		self.empty:SetText("No voted items.")
+	else
+		self.empty:SetText("No usable items.")
 	end
 	self.empty:SetShown(#visible == 0)
 
@@ -109,7 +135,26 @@ function Frame:Refresh()
 		overscroll = view - step
 	end
 	self.scroll.content:SetHeight(math.max(1, y + overscroll))
+	local maxScroll = self.scroll:GetVerticalScrollRange() or 0
+	if self.scroll:GetVerticalScroll() > maxScroll then
+		self.scroll:SetVerticalScroll(maxScroll)
+	end
 	self.refreshing = false
+end
+
+function Frame:AtTop(row)
+	local content = self.scroll and self.scroll.content
+	if not content or not row then
+		return false
+	end
+	local rowTop = row:GetTop()
+	local contentTop = content:GetTop()
+	if not rowTop or not contentTop then
+		return self.rows[1] == row
+	end
+	local offset = contentTop - rowTop
+	local scroll = self.scroll:GetVerticalScroll() or 0
+	return offset <= scroll + 8
 end
 
 function Frame:Advance(row)
@@ -237,8 +282,11 @@ function Frame:FillRow(row, index, item)
 		button:SetEnabled(not awarded and not closed)
 		button:SetBaseColor(0.16, 0.16, 0.18, 1)
 		button:SetScript("OnClick", function()
+			local atTop = self:AtTop(row)
 			OL.Session:SetResponse(index, button.responseId, item.myNote)
-			self:Advance(row)
+			if atTop then
+				self:Advance(row)
+			end
 		end)
 	end
 	row.choice:SetShown(locked or awarded or closed)

@@ -74,6 +74,14 @@ function Raid:LeaderName()
 	if UnitIsGroupLeader("player") then
 		return OL:FullName("player")
 	end
+	if IsInRaid() then
+		for index = 1, GetNumGroupMembers() do
+			local name, rank = GetRaidRosterInfo(index)
+			if name and rank == 2 then
+				return name
+			end
+		end
+	end
 	local count = GetNumGroupMembers()
 	for index = 1, count do
 		local unit = IsInRaid() and ("raid" .. index) or ("party" .. index)

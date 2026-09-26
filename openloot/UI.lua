@@ -152,38 +152,77 @@ end
 
 local titleOrder = 0
 
-local function rememberPlace(frame)
-	if not OL.db or not frame.placeKey then
-		return
+local function parentPoint(frame)
+	local frameScale = frame:GetEffectiveScale()
+	local parentScale = UIParent:GetEffectiveScale()
+	if not frameScale or frameScale == 0 or not parentScale or parentScale == 0 then
+		return nil
 	end
 	local left = frame:GetLeft()
 	local top = frame:GetTop()
-	local parentLeft = UIParent:GetLeft() or 0
 	local parentTop = UIParent:GetTop()
 	if not left or not top or not parentTop then
+		return nil
+	end
+	local x = left * frameScale / parentScale - (UIParent:GetLeft() or 0)
+	local y = top * frameScale / parentScale - parentTop
+	return x, y
+end
+
+local function clampPoint(frame, x, y)
+	local frameScale = frame:GetEffectiveScale()
+	local parentScale = UIParent:GetEffectiveScale()
+	local width = frame:GetWidth() * frameScale / parentScale
+	local height = frame:GetHeight() * frameScale / parentScale
+	local parentWidth = UIParent:GetWidth()
+	local parentHeight = UIParent:GetHeight()
+	if width >= parentWidth then
+		x = 0
+	elseif x < 0 then
+		x = 0
+	elseif x > parentWidth - width then
+		x = parentWidth - width
+	end
+	if height >= parentHeight then
+		y = 0
+	elseif y > 0 then
+		y = 0
+	elseif y < height - parentHeight then
+		y = height - parentHeight
+	end
+	return x, y
+end
+
+local function rememberPlace(frame, x, y)
+	if not OL.db or not frame.placeKey then
+		return
+	end
+	if not x or not y then
+		x, y = parentPoint(frame)
+	end
+	if not x or not y then
 		return
 	end
 	OL.db.frames = OL.db.frames or {}
 	OL.db.frames[frame.placeKey] = {
-		x = left - parentLeft,
-		y = top - parentTop,
+		x = x,
+		y = y,
 		w = frame:GetWidth(),
 		h = frame:GetHeight(),
 		a = frame.alphaValue or 1,
+		s = frame.scaleValue or 1,
 	}
 end
 
 local function pinTop(frame)
-	local left = frame:GetLeft()
-	local top = frame:GetTop()
-	local parentLeft = UIParent:GetLeft() or 0
-	local parentTop = UIParent:GetTop()
-	if not left or not top or not parentTop then
+	local x, y = parentPoint(frame)
+	if not x then
 		return
 	end
+	x, y = clampPoint(frame, x, y)
 	frame:ClearAllPoints()
-	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left - parentLeft, top - parentTop)
-	rememberPlace(frame)
+	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+	rememberPlace(frame, x, y)
 end
 
 local function placeWindow(frame)
@@ -206,22 +245,37 @@ local function placeWindow(frame)
 	if frame.alphaSlider then
 		frame.alphaSlider:SetValue(frame.alphaValue or 1)
 	end
+	if frame.ApplyScale then
+		frame:ApplyScale((saved and saved.s) or 1)
+	end
+	if frame.scaleSlider then
+		frame.scaleSlider:SetValue(frame.scaleValue or 1)
+		frame.scaleSlider:SetScale(frame.scaleValue or 1)
+	end
 end
 
 local function raiseWindow(frame)
 	titleOrder = titleOrder + 1
-	if titleOrder > 100 then
+	if titleOrder > 40 then
 		titleOrder = 1
 	end
-	frame:Raise()
-	if frame.titleBar then
-		frame.titleBar:SetFrameLevel(200 + titleOrder)
+	local strata = frame:GetFrameStrata() or "DIALOG"
+	local level = 10 + titleOrder * 6
+	frame:SetFrameLevel(level)
+	local function lift(widget, offset)
+		if not widget then
+			return
+		end
+		widget:SetFrameStrata(strata)
+		widget:SetFrameLevel(level + offset)
 	end
-	if frame.closeButton and frame.titleBar then
-		frame.closeButton:SetFrameLevel(frame.titleBar:GetFrameLevel() + 3)
-	end
-	if frame.alphaSlider and frame.titleBar then
-		frame.alphaSlider:SetFrameLevel(frame.titleBar:GetFrameLevel() + 3)
+	lift(frame.titleBar, 2)
+	lift(frame.closeButton, 4)
+	lift(frame.alphaSlider, 4)
+	lift(frame.scaleSlider, 4)
+	if frame.grip then
+		frame.grip:SetFrameStrata(strata)
+		frame.grip:SetFrameLevel(level + 80)
 	end
 end
 
@@ -230,7 +284,7 @@ function UI:CreateWindow(title, width, height, placeKey)
 	frame:SetSize(width, height)
 	frame.placeKey = placeKey or title
 	frame:SetMovable(true)
-	frame:SetClampedToScreen(true)
+	frame:SetClampedToScreen(false)
 	frame:SetFrameStrata("DIALOG")
 	frame:SetFrameLevel(1)
 	frame:SetClipsChildren(true)
@@ -243,6 +297,9 @@ function UI:CreateWindow(title, width, height, placeKey)
 		end
 		if self.alphaSlider then
 			self.alphaSlider:Show()
+		end
+		if self.scaleSlider then
+			self.scaleSlider:Show()
 		end
 		if self.grip then
 			self.grip:SetShown(not self.collapsed)
@@ -257,12 +314,16 @@ function UI:CreateWindow(title, width, height, placeKey)
 		if self.alphaSlider then
 			self.alphaSlider:Hide()
 		end
+		if self.scaleSlider then
+			self.scaleSlider:Hide()
+		end
+		self.sizing = false
 	end)
 	frame.expandedHeight = height
 
 	local titleBar = CreateFrame("Button", nil, UIParent, "BackdropTemplate")
 	titleBar:SetParent(UIParent)
-	titleBar:SetFrameStrata("FULLSCREEN")
+	titleBar:SetFrameStrata("DIALOG")
 	titleBar:SetFrameLevel(200)
 	titleBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
 	titleBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
@@ -280,18 +341,42 @@ function UI:CreateWindow(title, width, height, placeKey)
 		raiseWindow(frame)
 	end)
 	titleBar:SetScript("OnUpdate", function(self)
-		if not self.dragging or self.moved then
+		if not self.dragging then
 			return
 		end
 		local x, y = GetCursorPosition()
-		if self.downX and (math.abs(x - self.downX) > 4 or math.abs(y - self.downY) > 4) then
-			self.moved = true
-			frame:StartMoving()
+		if not IsMouseButtonDown("LeftButton") then
+			if self.moved then
+				pinTop(frame)
+			end
+			self.dragging = false
+			self.moved = false
+			return
 		end
+		if not self.moved then
+			if self.downX and (math.abs(x - self.downX) > 4 or math.abs(y - self.downY) > 4) then
+				local left = frame:GetLeft()
+				local top = frame:GetTop()
+				if not left or not top then
+					return
+				end
+				local parentScale = UIParent:GetEffectiveScale()
+				local frameScale = frame:GetEffectiveScale()
+				self.moved = true
+				self.grabX = x / parentScale - left * frameScale / parentScale
+				self.grabY = y / parentScale - top * frameScale / parentScale
+			end
+			return
+		end
+		local parentScale = UIParent:GetEffectiveScale()
+		local pointX = x / parentScale - self.grabX - (UIParent:GetLeft() or 0)
+		local pointY = y / parentScale - self.grabY - (UIParent:GetTop() or 0)
+		pointX, pointY = clampPoint(frame, pointX, pointY)
+		frame:ClearAllPoints()
+		frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", pointX, pointY)
 	end)
 	titleBar:SetScript("OnMouseUp", function(self, button)
 		if self.moved then
-			frame:StopMovingOrSizing()
 			pinTop(frame)
 		end
 		self.dragging = false
@@ -319,7 +404,7 @@ function UI:CreateWindow(title, width, height, placeKey)
 	frame.titleText = titleText
 
 	local close = self:FlatButton(UIParent, "X", 16, 16)
-	close:SetFrameStrata("FULLSCREEN")
+	close:SetFrameStrata("DIALOG")
 	close:SetFrameLevel(titleBar:GetFrameLevel() + 2)
 	close:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
 	close:Hide()
@@ -332,7 +417,7 @@ function UI:CreateWindow(title, width, height, placeKey)
 	end)
 
 	local slider = CreateFrame("Slider", nil, UIParent)
-	slider:SetFrameStrata("FULLSCREEN")
+	slider:SetFrameStrata("DIALOG")
 	slider:SetFrameLevel(titleBar:GetFrameLevel() + 3)
 	slider:SetSize(52, 10)
 	slider:SetPoint("RIGHT", close, "LEFT", -6, 0)
@@ -370,27 +455,115 @@ function UI:CreateWindow(title, width, height, placeKey)
 		if self.alphaSlider then
 			self.alphaSlider:SetAlpha(value)
 		end
+		if self.scaleSlider then
+			self.scaleSlider:SetAlpha(value)
+		end
 	end
 	slider:SetScript("OnValueChanged", function(_, value)
 		frame:ApplyAlpha(value)
 		rememberPlace(frame)
 	end)
-	slider:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:SetText("Opacity")
-		GameTooltip:Show()
+	local scaleSlider = CreateFrame("Slider", nil, UIParent)
+	scaleSlider:SetFrameStrata("DIALOG")
+	scaleSlider:SetFrameLevel(titleBar:GetFrameLevel() + 3)
+	scaleSlider:SetSize(52, 10)
+	scaleSlider:SetPoint("RIGHT", slider, "LEFT", -6, 0)
+	scaleSlider:SetOrientation("HORIZONTAL")
+	scaleSlider:SetMinMaxValues(0.5, 1)
+	scaleSlider:SetValueStep(0.05)
+	if scaleSlider.SetObeyStepOnDrag then
+		scaleSlider:SetObeyStepOnDrag(true)
+	end
+	local scaleTrack = scaleSlider:CreateTexture(nil, "BACKGROUND")
+	scaleTrack:SetAllPoints()
+	scaleTrack:SetTexture(UI.WHITE)
+	scaleTrack:SetVertexColor(0.07, 0.07, 0.08, 1)
+	local scaleThumb = scaleSlider:CreateTexture(nil, "OVERLAY")
+	scaleThumb:SetTexture(UI.WHITE)
+	scaleThumb:SetVertexColor(0.82, 0.82, 0.86, 1)
+	scaleSlider:SetThumbTexture(scaleThumb)
+	scaleThumb:SetSize(8, 10)
+	scaleSlider:Hide()
+	frame.scaleSlider = scaleSlider
+	function frame:ApplyScale(value)
+		if value < 0.5 then
+			value = 0.5
+		elseif value > 1 then
+			value = 1
+		end
+		self.scaleValue = value
+		self:SetScale(value)
+		if self.titleBar then
+			self.titleBar:SetScale(value)
+		end
+		if self.closeButton then
+			self.closeButton:SetScale(value)
+		end
+		if self.alphaSlider then
+			self.alphaSlider:SetScale(value)
+		end
+		if self.grip then
+			self.grip:SetScale(value)
+		end
+	end
+	local function endScaleDrag(self)
+		if not self.dragging then
+			return
+		end
+		self.dragging = false
+		self:ClearAllPoints()
+		self:SetPoint("RIGHT", slider, "LEFT", -6, 0)
+		self:SetScale(frame.scaleValue or 1)
+		rememberPlace(frame)
+	end
+	local function holdScaleSlider(self)
+		if self.dragging then
+			return
+		end
+		local left = self:GetLeft()
+		local bottom = self:GetBottom()
+		if not left or not bottom then
+			return
+		end
+		self.dragging = true
+		self:ClearAllPoints()
+		self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", left, bottom)
+	end
+	scaleSlider:SetScript("OnValueChanged", function(self, value)
+		if IsMouseButtonDown("LeftButton") then
+			holdScaleSlider(self)
+		end
+		frame:ApplyScale(value)
+		if self.dragging then
+			return
+		end
+		self:SetScale(frame.scaleValue or 1)
+		rememberPlace(frame)
 	end)
-	slider:SetScript("OnLeave", function()
-		GameTooltip:Hide()
+	scaleSlider:HookScript("OnMouseDown", function(self, button)
+		if button == "LeftButton" then
+			holdScaleSlider(self)
+		end
 	end)
-	titleText:SetPoint("RIGHT", slider, "LEFT", -6, 0)
+	scaleSlider:HookScript("OnMouseUp", function(self, button)
+		if button == "LeftButton" then
+			endScaleDrag(self)
+		end
+	end)
+	scaleSlider:SetScript("OnUpdate", function(self)
+		if self.dragging and not IsMouseButtonDown("LeftButton") then
+			endScaleDrag(self)
+		end
+	end)
+	titleText:SetPoint("RIGHT", scaleSlider, "LEFT", -6, 0)
 	titleText:SetJustifyH("LEFT")
 	titleText:SetWordWrap(false)
 
-	local grip = CreateFrame("Button", nil, frame)
+	local grip = CreateFrame("Button", nil, UIParent)
+	grip:SetFrameStrata("DIALOG")
+	grip:SetFrameLevel(400)
 	grip:SetSize(14, 14)
-	grip:SetPoint("BOTTOMRIGHT", -1, 1)
-	grip:SetFrameLevel(frame:GetFrameLevel() + 40)
+	grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -2, 2)
 	local gripMark = grip:CreateTexture(nil, "OVERLAY")
 	gripMark:SetTexture(UI.WHITE)
 	gripMark:SetVertexColor(0.55, 0.55, 0.58, 0.9)
@@ -401,29 +574,57 @@ function UI:CreateWindow(title, width, height, placeKey)
 	gripMark2:SetVertexColor(0.55, 0.55, 0.58, 0.9)
 	gripMark2:SetSize(5, 1)
 	gripMark2:SetPoint("BOTTOMRIGHT", -2, 6)
+	grip:Hide()
 	frame.grip = grip
-	frame:SetResizable(true)
-	if frame.SetResizeBounds then
-		frame:SetResizeBounds(width * 0.6, height * 0.5, 1400, 1000)
-	else
-		frame:SetMinResize(width * 0.6, height * 0.5)
-		frame:SetMaxResize(1400, 1000)
-	end
-	grip:SetScript("OnMouseDown", function(_, button)
-		if button == "LeftButton" then
-			frame.sizing = true
-			frame:StartSizing("BOTTOMRIGHT")
-		end
-	end)
-	frame:HookScript("OnMouseUp", function(self, button)
-		if button ~= "LeftButton" or not self.sizing then
+	frame.minW = width * 0.6
+	frame.minH = math.max(48, height * 0.5)
+	frame.maxW = 1400
+	frame.maxH = 1000
+	local function finishSizing(target)
+		if not target.sizing then
 			return
 		end
-		self.sizing = false
-		self:StopMovingOrSizing()
-		self.userSized = true
-		self.expandedHeight = self:GetHeight()
-		pinTop(self)
+		target.sizing = false
+		target:StopMovingOrSizing()
+		target.userSized = true
+		target.expandedHeight = target:GetHeight()
+		pinTop(target)
+	end
+	grip:SetScript("OnMouseDown", function(_, button)
+		if button ~= "LeftButton" then
+			return
+		end
+		local cursorX, cursorY = GetCursorPosition()
+		local scale = frame:GetEffectiveScale()
+		frame.sizing = true
+		frame.sizeX = cursorX / scale
+		frame.sizeY = cursorY / scale
+		frame.sizeW = frame:GetWidth()
+		frame.sizeH = frame:GetHeight()
+	end)
+	grip:SetScript("OnUpdate", function()
+		if not frame.sizing then
+			return
+		end
+		if not IsMouseButtonDown("LeftButton") then
+			finishSizing(frame)
+			return
+		end
+		local cursorX, cursorY = GetCursorPosition()
+		local scale = frame:GetEffectiveScale()
+		local nextW = frame.sizeW + (cursorX / scale - frame.sizeX)
+		local nextH = frame.sizeH + (frame.sizeY - cursorY / scale)
+		if nextW < frame.minW then
+			nextW = frame.minW
+		elseif nextW > frame.maxW then
+			nextW = frame.maxW
+		end
+		if nextH < frame.minH then
+			nextH = frame.minH
+		elseif nextH > frame.maxH then
+			nextH = frame.maxH
+		end
+		frame:SetSize(nextW, nextH)
 	end)
 
 	local content = CreateFrame("Frame", nil, frame)
@@ -468,6 +669,9 @@ local function showPrompt(title, body, buttons)
 		prompt.closeButton:SetFrameStrata("FULLSCREEN_DIALOG")
 		if prompt.alphaSlider then
 			prompt.alphaSlider:SetFrameStrata("FULLSCREEN_DIALOG")
+		end
+		if prompt.scaleSlider then
+			prompt.scaleSlider:SetFrameStrata("FULLSCREEN_DIALOG")
 		end
 		prompt:SetFrameLevel(20)
 		prompt.body = UI:Text(prompt.content, "OVERLAY", "GameFontHighlight")

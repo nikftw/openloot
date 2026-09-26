@@ -84,7 +84,23 @@ function Session:Roster()
 	return roster
 end
 
+function Session:RememberEnd(id)
+	if not id or id == "" then
+		return
+	end
+	self.ended = self.ended or {}
+	self.ended[id] = true
+end
+
+function Session:HasEnded(id)
+	return self.ended and self.ended[id] and true or false
+end
+
 function Session:ShowUI()
+	if self.active and self:HasEnded(self.active.id) then
+		self:Clear()
+		return
+	end
 	OL.RaiderFrame:Show()
 	if OL.Council:IsLocalCouncil() then
 		OL.CouncilFrame:Show()
@@ -106,6 +122,9 @@ function Session:End()
 end
 
 function Session:Clear()
+	if self.active and self.active.id then
+		self:RememberEnd(self.active.id)
+	end
 	self.active = nil
 	if OL.RaiderFrame then
 		OL.RaiderFrame:Hide()
@@ -326,8 +345,19 @@ local function fromLeader(sender)
 	return leader and OL:ShortName(sender) == OL:ShortName(leader)
 end
 
+local function canEnd(sender)
+	if fromLeader(sender) then
+		return true
+	end
+	local owner = Session.active and Session.active.owner
+	return owner and OL:ShortName(sender) == OL:ShortName(owner) or false
+end
+
 function Session:OnComm(sender, op, fields)
 	if not fields[1] then
+		return
+	end
+	if (op == "begin" or op == "item" or op == "vend") and self:HasEnded(fields[1]) then
 		return
 	end
 	local leader = fromLeader(sender)
@@ -380,9 +410,14 @@ function Session:OnComm(sender, op, fields)
 		return
 	end
 	if op == "end" then
-		if fromLeader(sender) and self.active and self.active.id == fields[1] then
-			self:Clear()
-			OL:Print("Loot session closed.")
+		if canEnd(sender) then
+			local id = fields[1]
+			local open = self.active and self.active.id == id
+			self:RememberEnd(id)
+			if open then
+				self:Clear()
+				OL:Print("Loot session closed.")
+			end
 		end
 		return
 	end
