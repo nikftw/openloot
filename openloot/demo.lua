@@ -1,8 +1,7 @@
--- Temporary test tools. Delete this file and its line in openloot.toc before release.
 local OL = OpenLoot
 
-OL.Dev = {}
-local Dev = OL.Dev
+OL.Demo = {}
+local Demo = OL.Demo
 
 local FAKE = {}
 local ROSTER = [[
@@ -81,7 +80,7 @@ local function demoSession(id)
 	return type(id) == "string" and id:sub(1, 8) == "dev-demo"
 end
 
-function Dev:ScrubSaved()
+function Demo:ScrubSaved()
 	local db = OL.db
 	if not db then
 		return
@@ -119,7 +118,7 @@ function Dev:ScrubSaved()
 	end
 end
 
-function Dev:HoldSaves()
+function Demo:HoldSaves()
 	if self.held or not OL.db then
 		return
 	end
@@ -137,7 +136,7 @@ function Dev:HoldSaves()
 	end
 end
 
-function Dev:ReleaseSaves()
+function Demo:ReleaseSaves()
 	if not self.held or not OL.db then
 		self.held = nil
 		return
@@ -152,7 +151,7 @@ function Dev:ReleaseSaves()
 	end
 end
 
-function Dev:StopDemo(quiet)
+function Demo:StopDemo(quiet)
 	OL.devMode = false
 	OL.devRoster = nil
 	OL.devCouncil = nil
@@ -186,7 +185,7 @@ function Dev:StopDemo(quiet)
 	end
 end
 
-function Dev:Demo()
+function Demo:Demo()
 	if self.held then
 		self:StopDemo(true)
 	end
@@ -352,10 +351,10 @@ end
 local logout = CreateFrame("Frame")
 logout:RegisterEvent("PLAYER_LOGOUT")
 logout:SetScript("OnEvent", function()
-	Dev:ReleaseSaves()
+	Demo:ReleaseSaves()
 end)
 
-function Dev:DemoSlash(rest)
+function Demo:DemoSlash(rest)
 	local sub = (rest or ""):lower()
 	if sub == "off" or (sub == "" and OL.devMode) then
 		self:StopDemo(false)

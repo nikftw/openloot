@@ -206,7 +206,7 @@ function OL:Slash(message)
 	elseif cmd == "v" or cmd == "version" then
 		self.Versions:Toggle()
 	elseif cmd == "demo" then
-		self.Dev:DemoSlash(rest)
+		self.Demo:DemoSlash(rest)
 	elseif cmd == "resize" then
 		self.UI:ToggleResize()
 	else
@@ -221,9 +221,7 @@ function handlers.ADDON_LOADED(name)
 		return
 	end
 	OL:InitDB()
-	if OL.Dev and OL.Dev.ScrubSaved then
-		OL.Dev:ScrubSaved()
-	end
+	OL.Demo:ScrubSaved()
 	OL.Comms:Init()
 	OL.Council:Init()
 	OL.RaidMode:Init()
