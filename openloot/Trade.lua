@@ -150,7 +150,9 @@ function Trade:Show()
 		return
 	end
 	self:Ensure()
-	self.frame:SetWidth(340)
+	if not self.frame.userSized then
+		self.frame:SetWidth(340)
+	end
 	self.frame:Show()
 	self:WatchRange(true)
 	self:Refresh()
@@ -388,6 +390,19 @@ function Trade:ForWinner(name)
 	return matches
 end
 
+function Trade:PartnerFromUnit()
+	if not UnitExists("NPC") or UnitIsUnit("NPC", "player") then
+		return nil
+	end
+	for _, entry in ipairs(self.list) do
+		local unit = OL:GroupUnit(entry.winner)
+		if unit and UnitIsUnit(unit, "NPC") then
+			return entry.winner
+		end
+	end
+	return self:NpcTarget()
+end
+
 function Trade:OnTradeShow()
 	self.trading = true
 	self.accepted = {}
@@ -396,9 +411,8 @@ function Trade:OnTradeShow()
 	if not self.lastTargetAt or GetTime() - self.lastTargetAt > 5 then
 		recent = nil
 	end
-	local target = self:FrameTarget() or self:NpcTarget() or recent
+	local target = self:FrameTarget() or self:PartnerFromUnit() or recent
 	if not target then
-		OL:Print("Couldn't read who you are trading, so items were not added.")
 		return
 	end
 	self.partner = target
@@ -432,7 +446,7 @@ end
 function Trade:Place(entries)
 	local reserved = {}
 	local tradeSlot = 1
-	local maxSlots = (MAX_TRADE_ITEMS or 7) - 1
+	local maxSlots = 6
 	for _, entry in ipairs(entries) do
 		if tradeSlot > maxSlots then
 			break
@@ -454,11 +468,14 @@ function Trade:Place(entries)
 			OL:Print("Couldn't find " .. entry.link .. " in your bags.")
 		end
 	end
+	if tradeSlot > maxSlots then
+		OL:Print("Added 6 items. Trade again for the rest.")
+	end
 end
 
 function Trade:OnAccept()
 	self.accepted = {}
-	local maxSlots = (MAX_TRADE_ITEMS or 7) - 1
+	local maxSlots = 6
 	for index = 1, maxSlots do
 		local ok, link = pcall(GetTradePlayerItemLink, index)
 		if ok and plainText(link) then

@@ -95,6 +95,16 @@ function Session:ShowUI()
 	OL.CouncilFrame:Refresh()
 end
 
+function Session:End()
+	if not self:IsActive() then
+		return
+	end
+	local id = self.active.id
+	OL.Comms:Send(join({ "end", id }))
+	self:Clear()
+	OL:Print("Loot session closed.")
+end
+
 function Session:Clear()
 	self.active = nil
 	if OL.RaiderFrame then
@@ -333,6 +343,7 @@ function Session:OnComm(sender, op, fields)
 			OL.History:Ensure(fields[1], time())
 			OL.Council:Rebuild()
 		end
+		self:ShowUI()
 		return
 	end
 	if op == "item" then
@@ -366,6 +377,13 @@ function Session:OnComm(sender, op, fields)
 	end
 	if op == "vote" then
 		self:ApplyVote(fields[1], tonumber(fields[2]), sender, textOrNil(fields[3]), numberOrNil(fields[4]), numberOrNil(fields[5]), textOrNil(fields[6]), textOrNil(fields[7]), textOrNil(fields[8]))
+		return
+	end
+	if op == "end" then
+		if fromLeader(sender) and self.active and self.active.id == fields[1] then
+			self:Clear()
+			OL:Print("Loot session closed.")
+		end
 		return
 	end
 	if op == "close" then

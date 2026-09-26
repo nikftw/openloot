@@ -172,26 +172,22 @@ function Items:PlayerCanUse(link, equipLoc, classID, subClassID)
 	if classID ~= armorClass and classID ~= weaponClass then
 		return true
 	end
-	local itemID = C_Item.GetItemInfoInstant(link)
-	if itemID and C_Item.GetItemSpecInfo then
-		local specs = C_Item.GetItemSpecInfo(itemID)
-		if specs and #specs > 0 then
-			local specIndex = GetSpecialization()
-			local specID = specIndex and GetSpecializationInfo(specIndex)
-			if not specID then
-				return true
-			end
-			for _, id in ipairs(specs) do
-				if id == specID then
-					return true
-				end
-			end
-			return false
-		end
-	end
 	if classID == armorClass and subClassID and subClassID >= 1 and subClassID <= 4 then
 		local _, classFile = UnitClass("player")
-		return ARMOR_SUBCLASS[classFile] == subClassID
+		local heaviest = ARMOR_SUBCLASS[classFile]
+		if not heaviest then
+			return true
+		end
+		return subClassID <= heaviest
+	end
+	if link and C_PlayerInfo and C_PlayerInfo.CanUseItem then
+		local itemID = C_Item.GetItemInfoInstant(link)
+		if itemID then
+			local ok, canUse = pcall(C_PlayerInfo.CanUseItem, itemID)
+			if ok and type(canUse) == "boolean" then
+				return canUse
+			end
+		end
 	end
 	return true
 end

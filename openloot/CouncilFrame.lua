@@ -21,6 +21,11 @@ function Frame:Ensure()
 		return
 	end
 	local frame = OL.UI:CreateWindow("OpenLoot Council", 790, 430)
+	frame.CloseAction = function()
+		if UnitIsGroupLeader("player") and OL.Session and OL.Session:IsActive() then
+			OL.Session:End()
+		end
+	end
 	self.frame = frame
 	self.selected = 1
 	self.icons = {}
@@ -153,7 +158,10 @@ function Frame:Refresh()
 	local iconWidth = (cols - 1) * 40 + 36
 	self.iconPane:SetWidth(iconWidth)
 	if not self.frame.collapsed then
-		self.frame:SetWidth(iconWidth + 788)
+		local want = iconWidth + 788
+		if not self.frame.userSized or self.frame:GetWidth() < want then
+			self.frame:SetWidth(want)
+		end
 		self.frame.expandedHeight = self.frame:GetHeight()
 	end
 

@@ -192,7 +192,7 @@ function Versions:Refresh()
 		self.rows[index]:Hide()
 	end
 	self.scroll.content:SetHeight(math.max(1, y))
-	if not self.frame.collapsed then
+	if not self.frame.collapsed and not self.frame.userSized then
 		local visible = math.min(math.max(#roster, 1), 12)
 		local height = 30 + visible * 24
 		self.frame:SetHeight(height)

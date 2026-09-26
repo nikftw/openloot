@@ -164,7 +164,13 @@ local function rememberPlace(frame)
 		return
 	end
 	OL.db.frames = OL.db.frames or {}
-	OL.db.frames[frame.placeKey] = { x = left - parentLeft, y = top - parentTop }
+	OL.db.frames[frame.placeKey] = {
+		x = left - parentLeft,
+		y = top - parentTop,
+		w = frame:GetWidth(),
+		h = frame:GetHeight(),
+		a = frame.alphaValue or 1,
+	}
 end
 
 local function pinTop(frame)
@@ -190,6 +196,16 @@ local function placeWindow(frame)
 	end
 	frame:ClearAllPoints()
 	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+	if saved and saved.w and saved.h and saved.w > 40 and saved.h > 24 then
+		frame:SetSize(saved.w, saved.h)
+		frame.userSized = true
+	end
+	if frame.ApplyAlpha then
+		frame:ApplyAlpha((saved and saved.a) or 1)
+	end
+	if frame.alphaSlider then
+		frame.alphaSlider:SetValue(frame.alphaValue or 1)
+	end
 end
 
 local function raiseWindow(frame)
@@ -202,7 +218,10 @@ local function raiseWindow(frame)
 		frame.titleBar:SetFrameLevel(200 + titleOrder)
 	end
 	if frame.closeButton and frame.titleBar then
-		frame.closeButton:SetFrameLevel(frame.titleBar:GetFrameLevel() + 2)
+		frame.closeButton:SetFrameLevel(frame.titleBar:GetFrameLevel() + 3)
+	end
+	if frame.alphaSlider and frame.titleBar then
+		frame.alphaSlider:SetFrameLevel(frame.titleBar:GetFrameLevel() + 3)
 	end
 end
 
@@ -222,12 +241,21 @@ function UI:CreateWindow(title, width, height, placeKey)
 		if self.closeButton then
 			self.closeButton:Show()
 		end
+		if self.alphaSlider then
+			self.alphaSlider:Show()
+		end
+		if self.grip then
+			self.grip:SetShown(not self.collapsed)
+		end
 		raiseWindow(self)
 	end)
 	frame:HookScript("OnHide", function(self)
 		self.titleBar:Hide()
 		if self.closeButton then
 			self.closeButton:Hide()
+		end
+		if self.alphaSlider then
+			self.alphaSlider:Hide()
 		end
 	end)
 	frame.expandedHeight = height
@@ -297,7 +325,105 @@ function UI:CreateWindow(title, width, height, placeKey)
 	close:Hide()
 	frame.closeButton = close
 	close:SetScript("OnClick", function()
+		if frame.CloseAction then
+			frame:CloseAction()
+		end
 		frame:Hide()
+	end)
+
+	local slider = CreateFrame("Slider", nil, UIParent)
+	slider:SetFrameStrata("FULLSCREEN")
+	slider:SetFrameLevel(titleBar:GetFrameLevel() + 3)
+	slider:SetSize(52, 10)
+	slider:SetPoint("RIGHT", close, "LEFT", -6, 0)
+	slider:SetOrientation("HORIZONTAL")
+	slider:SetMinMaxValues(0.45, 1)
+	slider:SetValueStep(0.05)
+	if slider.SetObeyStepOnDrag then
+		slider:SetObeyStepOnDrag(true)
+	end
+	local track = slider:CreateTexture(nil, "BACKGROUND")
+	track:SetAllPoints()
+	track:SetTexture(UI.WHITE)
+	track:SetVertexColor(0.07, 0.07, 0.08, 1)
+	local thumb = slider:CreateTexture(nil, "OVERLAY")
+	thumb:SetTexture(UI.WHITE)
+	thumb:SetVertexColor(0.82, 0.82, 0.86, 1)
+	slider:SetThumbTexture(thumb)
+	thumb:SetSize(8, 10)
+	slider:Hide()
+	frame.alphaSlider = slider
+	function frame:ApplyAlpha(value)
+		if value < 0.45 then
+			value = 0.45
+		elseif value > 1 then
+			value = 1
+		end
+		self.alphaValue = value
+		self:SetAlpha(value)
+		if self.titleBar then
+			self.titleBar:SetAlpha(value)
+		end
+		if self.closeButton then
+			self.closeButton:SetAlpha(value)
+		end
+		if self.alphaSlider then
+			self.alphaSlider:SetAlpha(value)
+		end
+	end
+	slider:SetScript("OnValueChanged", function(_, value)
+		frame:ApplyAlpha(value)
+		rememberPlace(frame)
+	end)
+	slider:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText("Opacity")
+		GameTooltip:Show()
+	end)
+	slider:SetScript("OnLeave", function()
+		GameTooltip:Hide()
+	end)
+	titleText:SetPoint("RIGHT", slider, "LEFT", -6, 0)
+	titleText:SetJustifyH("LEFT")
+	titleText:SetWordWrap(false)
+
+	local grip = CreateFrame("Button", nil, frame)
+	grip:SetSize(14, 14)
+	grip:SetPoint("BOTTOMRIGHT", -1, 1)
+	grip:SetFrameLevel(frame:GetFrameLevel() + 40)
+	local gripMark = grip:CreateTexture(nil, "OVERLAY")
+	gripMark:SetTexture(UI.WHITE)
+	gripMark:SetVertexColor(0.55, 0.55, 0.58, 0.9)
+	gripMark:SetSize(8, 1)
+	gripMark:SetPoint("BOTTOMRIGHT", -2, 3)
+	local gripMark2 = grip:CreateTexture(nil, "OVERLAY")
+	gripMark2:SetTexture(UI.WHITE)
+	gripMark2:SetVertexColor(0.55, 0.55, 0.58, 0.9)
+	gripMark2:SetSize(5, 1)
+	gripMark2:SetPoint("BOTTOMRIGHT", -2, 6)
+	frame.grip = grip
+	frame:SetResizable(true)
+	if frame.SetResizeBounds then
+		frame:SetResizeBounds(width * 0.6, height * 0.5, 1400, 1000)
+	else
+		frame:SetMinResize(width * 0.6, height * 0.5)
+		frame:SetMaxResize(1400, 1000)
+	end
+	grip:SetScript("OnMouseDown", function(_, button)
+		if button == "LeftButton" then
+			frame.sizing = true
+			frame:StartSizing("BOTTOMRIGHT")
+		end
+	end)
+	frame:HookScript("OnMouseUp", function(self, button)
+		if button ~= "LeftButton" or not self.sizing then
+			return
+		end
+		self.sizing = false
+		self:StopMovingOrSizing()
+		self.userSized = true
+		self.expandedHeight = self:GetHeight()
+		pinTop(self)
 	end)
 
 	local content = CreateFrame("Frame", nil, frame)
@@ -312,11 +438,17 @@ function UI:CreateWindow(title, width, height, placeKey)
 			self.collapsed = false
 			self.content:Show()
 			self:SetHeight(self.expandedHeight)
+			if self.grip then
+				self.grip:Show()
+			end
 		else
 			self.collapsed = true
 			self.expandedHeight = self:GetHeight()
 			self.content:Hide()
 			self:SetHeight(self.titleBar:GetHeight())
+			if self.grip then
+				self.grip:Hide()
+			end
 		end
 	end
 
@@ -334,6 +466,9 @@ local function showPrompt(title, body, buttons)
 		prompt:SetFrameStrata("FULLSCREEN_DIALOG")
 		prompt.titleBar:SetFrameStrata("FULLSCREEN_DIALOG")
 		prompt.closeButton:SetFrameStrata("FULLSCREEN_DIALOG")
+		if prompt.alphaSlider then
+			prompt.alphaSlider:SetFrameStrata("FULLSCREEN_DIALOG")
+		end
 		prompt:SetFrameLevel(20)
 		prompt.body = UI:Text(prompt.content, "OVERLAY", "GameFontHighlight")
 		prompt.body:SetPoint("TOPLEFT", 0, 0)

@@ -66,18 +66,20 @@ function Comms:Destinations()
 		return list
 	end
 	local mine = OL:ShortName(OL:FullName("player"))
-	for index = 1, GetNumGroupMembers() do
-		local unit
-		if IsInRaid() then
-			unit = "raid" .. index
-		elseif index == 1 then
-			unit = "player"
-		else
-			unit = "party" .. (index - 1)
+	if IsInRaid() then
+		for index = 1, GetNumGroupMembers() do
+			local name, _, _, _, _, _, _, online = GetRaidRosterInfo(index)
+			if name and online ~= false and OL:ShortName(name) ~= mine then
+				add("WHISPER", name)
+			end
 		end
-		if UnitExists(unit) and not UnitIsUnit(unit, "player") then
+		return list
+	end
+	for index = 1, GetNumSubgroupMembers() do
+		local unit = "party" .. index
+		if UnitExists(unit) then
 			local name = GetUnitName(unit, true) or OL:FullName(unit)
-			if name and name ~= "" and OL:ShortName(name) ~= mine then
+			if name and name ~= "" then
 				add("WHISPER", name)
 			end
 		end
@@ -266,7 +268,7 @@ function OL:OnComm(sender, op, fields)
 		self.RaidMode:OnComm(sender, op, fields)
 	elseif op == "ver" or op == "verq" then
 		self.Versions:OnComm(sender, op, fields)
-	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" then
+	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" or op == "end" then
 		self.Session:OnComm(sender, op, fields)
 	end
 end
