@@ -1,0 +1,19 @@
+## Interface: 120100
+## Title: OpenLoot
+## Notes: Loot council for raid sessions
+## Author: OpenLoot
+## Version: 0.1.0
+## SavedVariables: OpenLootDB
+## AllowLoadGameType: standard, camelot
+## Category-enUS: Loot
+
+Core.lua
+Comms.lua
+Council.lua
+Items.lua
+UI.lua
+RaidMode.lua
+Session.lua
+RaiderFrame.lua
+CouncilFrame.lua
+History.lua
