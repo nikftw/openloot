@@ -111,16 +111,10 @@ function Versions:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Versions", 272, 220)
+	local frame = OL.UI:CreateWindow("OpenLoot Versions", 272, 30)
 	self.frame = frame
-	self.header = OL.UI:Text(frame.content, "OVERLAY", "GameFontDisableSmall")
-	self.header:SetPoint("TOPLEFT", 4, 0)
-	self.header:SetText("Name")
-	self.headerVersion = OL.UI:Text(frame.content, "OVERLAY", "GameFontDisableSmall")
-	self.headerVersion:SetPoint("TOPRIGHT", -4, 0)
-	self.headerVersion:SetText("Version")
 	self.scroll = OL.UI:CreateScroll(frame.content)
-	self.scroll:SetPoint("TOPLEFT", 0, -20)
+	self.scroll:SetPoint("TOPLEFT", 0, 0)
 	self.scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 end
 
@@ -200,7 +194,7 @@ function Versions:Refresh()
 	self.scroll.content:SetHeight(math.max(1, y))
 	if not self.frame.collapsed then
 		local visible = math.min(math.max(#roster, 1), 12)
-		local height = 52 + visible * 24
+		local height = 30 + visible * 24
 		self.frame:SetHeight(height)
 		self.frame.expandedHeight = height
 	end

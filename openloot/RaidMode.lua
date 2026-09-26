@@ -7,10 +7,6 @@ local function mapID()
 	return select(8, GetInstanceInfo())
 end
 
-local function inRaidInstance()
-	return select(2, GetInstanceInfo()) == "raid"
-end
-
 function Raid:Init()
 	self.wasInRaidInstance = false
 end
@@ -169,7 +165,7 @@ function Raid:ConsiderPrompt()
 end
 
 function Raid:OnZone()
-	local inside = inRaidInstance()
+	local inside = OL:IsLive()
 	if self.wasInRaidInstance and not inside then
 		self.promptOpen = false
 		self.askedMap = nil

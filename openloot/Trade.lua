@@ -179,9 +179,9 @@ function Trade:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Trades", 340, 202)
+	local frame = OL.UI:CreateWindow("OpenLoot Trades", 340, 200)
 	self.frame = frame
-	frame:SetScript("OnHide", function()
+	frame:HookScript("OnHide", function()
 		self:WatchRange(false)
 	end)
 	self.scroll = OL.UI:CreateScroll(frame.content)

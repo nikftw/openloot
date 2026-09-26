@@ -3,7 +3,7 @@ local OL = OpenLoot
 OL.RaiderFrame = {}
 local Frame = OL.RaiderFrame
 
-local ROW_HEIGHT = 44
+local ROW_HEIGHT = 48
 
 local ROW_BUTTONS = {
 	{ id = "BIS", text = "BIS", width = 40 },
@@ -31,7 +31,7 @@ function Frame:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot", CONTROL_WIDTH * 2 + 12, 626)
+	local frame = OL.UI:CreateWindow("OpenLoot", CONTROL_WIDTH * 2 + 16, 596)
 	self.frame = frame
 	self.rows = {}
 	self.showAll = false
@@ -154,7 +154,7 @@ function Frame:CreateRow(parent)
 	row.item:SetClipsChildren(true)
 	row:SetScript("OnSizeChanged", function(self, width)
 		if width and width > 0 then
-			self.item:SetWidth(math.floor((width - 4) * 0.5))
+			self.item:SetWidth(math.floor((width - 8) * 0.5))
 		end
 	end)
 
@@ -173,8 +173,8 @@ function Frame:CreateRow(parent)
 
 	row.controls = CreateFrame("Frame", nil, row)
 	row.controls:SetWidth(CONTROL_WIDTH)
-	row.controls:SetPoint("TOPRIGHT", 0, 0)
-	row.controls:SetPoint("BOTTOMRIGHT", 0, 0)
+	row.controls:SetPoint("TOPRIGHT", -4, 0)
+	row.controls:SetPoint("BOTTOMRIGHT", -4, 0)
 
 	row.buttons = {}
 	local x = 0
@@ -194,8 +194,8 @@ function Frame:CreateRow(parent)
 
 	row.noteLabel = OL.UI:Text(row.controls, "OVERLAY", "GameFontDisableSmall")
 	row.noteLabel:SetPoint("BOTTOMLEFT", row.controls, "BOTTOMLEFT", 0, 4)
-	row.noteLabel:SetText("Note")
-	row.save = OL.UI:FlatButton(row.controls, "Save", 44, 18)
+	row.noteLabel:SetText("NB")
+	row.save = OL.UI:FlatButton(row.controls, "Save", 40, 18)
 	row.save:SetPoint("BOTTOMRIGHT", row.controls, "BOTTOMRIGHT", 0, 4)
 	row.noteFrame = CreateFrame("Frame", nil, row.controls, "BackdropTemplate")
 	row.noteFrame:SetHeight(18)
@@ -203,7 +203,7 @@ function Frame:CreateRow(parent)
 	row.noteFrame:SetPoint("BOTTOMRIGHT", row.save, "BOTTOMLEFT", -4, 0)
 	row.noteFrame:SetBackdrop({ bgFile = OL.UI.WHITE, edgeFile = OL.UI.WHITE, edgeSize = 1 })
 	row.noteFrame:SetBackdropColor(0.07, 0.07, 0.08, 1)
-	row.noteFrame:SetBackdropBorderColor(0.3, 0.3, 0.32, 1)
+	row.noteFrame:SetBackdropBorderColor(0.26, 0.26, 0.28, 1)
 	row.noteBox = CreateFrame("EditBox", nil, row.noteFrame)
 	row.noteBox:SetPoint("TOPLEFT", 3, -2)
 	row.noteBox:SetPoint("BOTTOMRIGHT", -3, 2)

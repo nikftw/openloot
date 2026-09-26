@@ -61,11 +61,7 @@ function Comms:Enqueue(payload)
 end
 
 function Comms:Send(payload)
-	if OL.devMode then
-		return
-	end
-	local testing = OL.testSession and self:Channel()
-	if not OL:IsLive() and not testing then
+	if OL.devMode or not self:Channel() then
 		return
 	end
 	if #payload <= MAX_PART then
@@ -172,7 +168,7 @@ function OL:OnComm(sender, op, fields)
 		self.RaidMode:OnComm(sender, op, fields)
 	elseif op == "ver" or op == "verq" then
 		self.Versions:OnComm(sender, op, fields)
-	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "arow" or op == "aend" or op == "close" then
+	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" then
 		self.Session:OnComm(sender, op, fields)
 	end
 end

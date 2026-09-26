@@ -93,19 +93,23 @@ function Council:ReadMember(index)
 end
 
 function Council:EnsureSelf()
-	if not IsInGuild() then
+	if not IsInGuild() or not GetGuildInfo then
 		return
 	end
-	local mine = OL:ShortName(OL:FullName("player"))
-	local count = GetNumGuildMembers()
-	for index = 1, count do
-		local member = self:ReadMember(index)
-		if member and OL:ShortName(member.name) == mine then
-			self.byShort[mine] = member
-			self:Changed()
-			return
-		end
+	local _, rankName, rankIndex = GetGuildInfo("player")
+	if type(rankIndex) ~= "number" then
+		return
 	end
+	local name = OL:FullName("player")
+	local short = OL:ShortName(name)
+	self.byShort[short] = {
+		name = name,
+		rankName = self:RankName(rankIndex, rankName),
+		rankIndex = rankIndex,
+		officerNote = "",
+		council = self:Qualifies(rankIndex),
+	}
+	self:Changed()
 end
 
 function Council:GroupedShort()

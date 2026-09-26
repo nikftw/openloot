@@ -20,7 +20,7 @@ function Frame:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Council", 790, 432)
+	local frame = OL.UI:CreateWindow("OpenLoot Council", 790, 430)
 	self.frame = frame
 	self.selected = 1
 	self.icons = {}
@@ -46,14 +46,14 @@ function Frame:Ensure()
 	self.itemText:SetJustifyH("LEFT")
 	self.itemText:SetWordWrap(false)
 	self.itemIlvl = OL.UI:Text(self.main, "OVERLAY", "GameFontHighlightSmall")
-	self.itemIlvl:SetPoint("TOPLEFT", 0, -16)
-	self.itemIlvl:SetPoint("TOPRIGHT", 0, -16)
+	self.itemIlvl:SetPoint("TOPLEFT", 0, -22)
+	self.itemIlvl:SetPoint("TOPRIGHT", 0, -22)
 	self.itemIlvl:SetJustifyH("LEFT")
 	self.itemIlvl:SetWordWrap(false)
 
 	self.header = CreateFrame("Frame", nil, self.main)
-	self.header:SetPoint("TOPLEFT", 0, -32)
-	self.header:SetPoint("TOPRIGHT", 0, -32)
+	self.header:SetPoint("TOPLEFT", 0, -38)
+	self.header:SetPoint("TOPRIGHT", 0, -38)
 	self.header:SetHeight(16)
 	local x = 0
 	for _, col in ipairs(COLS) do
@@ -66,7 +66,7 @@ function Frame:Ensure()
 	end
 
 	local scroll = OL.UI:CreateScroll(self.main)
-	scroll:SetPoint("TOPLEFT", 0, -52)
+	scroll:SetPoint("TOPLEFT", 0, -58)
 	scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	local wheel = scroll:GetScript("OnMouseWheel")
 	scroll:SetScript("OnMouseWheel", function(selfScroll, delta)
@@ -150,7 +150,7 @@ function Frame:Refresh()
 		self.selected = 1
 	end
 	local cols = math.max(1, math.ceil(math.max(count, 1) / 10))
-	local iconWidth = cols * 40
+	local iconWidth = (cols - 1) * 40 + 36
 	self.iconPane:SetWidth(iconWidth)
 	if not self.frame.collapsed then
 		self.frame:SetWidth(iconWidth + 788)
@@ -167,7 +167,7 @@ function Frame:Refresh()
 		local col = math.floor((index - 1) / 10)
 		local row = (index - 1) % 10
 		button:ClearAllPoints()
-		button:SetPoint("TOPRIGHT", self.iconPane, "TOPRIGHT", -col * 40, -row * 40)
+		button:SetPoint("TOPLEFT", self.iconPane, "TOPLEFT", col * 40, -row * 40)
 		button:SetIcon(item.texture)
 		local responded = 0
 		local roster = OL.Session:Roster()
@@ -220,11 +220,11 @@ function Frame:Refresh()
 		end)
 	end
 	self.itemText:ClearAllPoints()
-	self.itemText:SetPoint("TOPLEFT", 0, 0)
+	self.itemText:SetPoint("LEFT", self.main, "TOPLEFT", 0, -9)
 	if open then
-		self.itemText:SetPoint("TOPRIGHT", self.skip, "TOPLEFT", -4, 0)
+		self.itemText:SetPoint("RIGHT", self.skip, "LEFT", -4, 0)
 	else
-		self.itemText:SetPoint("TOPRIGHT", 0, 0)
+		self.itemText:SetPoint("RIGHT", self.main, "TOPRIGHT", 0, -9)
 	end
 	self.itemText:SetText(item and item.link or "No items")
 	self.itemIlvl:SetText(item and OL.Items:RowMeta(item) or "")
@@ -362,9 +362,9 @@ function Frame:CreateRow(parent)
 	row.actions = CreateFrame("Frame", nil, row)
 	row.actions:SetSize(118, 18)
 	row.actions:SetPoint("RIGHT", -4, 0)
-	row.actions.vote = OL.UI:FlatButton(row.actions, "Vote", 52, 16)
+	row.actions.vote = OL.UI:FlatButton(row.actions, "Vote", 52, 18)
 	row.actions.vote:SetPoint("LEFT", 0, 0)
-	row.actions.award = OL.UI:FlatButton(row.actions, "Award", 58, 16)
+	row.actions.award = OL.UI:FlatButton(row.actions, "Award", 58, 18)
 	row.actions.award:SetPoint("LEFT", row.actions.vote, "RIGHT", 4, 0)
 	row.actions:EnableMouse(true)
 	row.actions:Hide()

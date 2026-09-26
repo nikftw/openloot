@@ -45,7 +45,7 @@ end
 local function paint(frame, red, green, blue, alpha)
 	frame:SetBackdrop({ bgFile = UI.WHITE, edgeFile = UI.WHITE, edgeSize = 1 })
 	frame:SetBackdropColor(red, green, blue, alpha or 1)
-	frame:SetBackdropBorderColor(0.22, 0.22, 0.24, 1)
+	frame:SetBackdropBorderColor(0.18, 0.18, 0.2, 1)
 end
 
 function UI:FlatButton(parent, text, width, height)
@@ -219,10 +219,16 @@ function UI:CreateWindow(title, width, height, placeKey)
 	paint(frame, 0.07, 0.07, 0.08, 1)
 	frame:HookScript("OnShow", function(self)
 		self.titleBar:Show()
+		if self.closeButton then
+			self.closeButton:Show()
+		end
 		raiseWindow(self)
 	end)
 	frame:HookScript("OnHide", function(self)
 		self.titleBar:Hide()
+		if self.closeButton then
+			self.closeButton:Hide()
+		end
 	end)
 	frame.expandedHeight = height
 
@@ -284,18 +290,19 @@ function UI:CreateWindow(title, width, height, placeKey)
 	titleText:SetText(title)
 	frame.titleText = titleText
 
-	local close = self:FlatButton(titleBar, "X", 16, 16)
+	local close = self:FlatButton(UIParent, "X", 16, 16)
 	close:SetFrameStrata("FULLSCREEN")
 	close:SetFrameLevel(titleBar:GetFrameLevel() + 2)
-	close:SetPoint("RIGHT", -4, 0)
+	close:SetPoint("RIGHT", titleBar, "RIGHT", -4, 0)
+	close:Hide()
 	frame.closeButton = close
 	close:SetScript("OnClick", function()
 		frame:Hide()
 	end)
 
 	local content = CreateFrame("Frame", nil, frame)
-	content:SetPoint("TOPLEFT", 4, -28)
-	content:SetPoint("BOTTOMRIGHT", -4, 4)
+	content:SetPoint("TOPLEFT", 4, -27)
+	content:SetPoint("BOTTOMRIGHT", -4, 3)
 	frame.content = content
 	frame.titleBar = titleBar
 
@@ -323,7 +330,7 @@ local promptQueue = {}
 
 local function showPrompt(title, body, buttons)
 	if not prompt then
-		prompt = UI:CreateWindow("OpenLoot", 420, 120, "OpenLoot Prompt")
+		prompt = UI:CreateWindow("OpenLoot", 420, 118, "OpenLoot Prompt")
 		prompt:SetFrameStrata("FULLSCREEN_DIALOG")
 		prompt.titleBar:SetFrameStrata("FULLSCREEN_DIALOG")
 		prompt.closeButton:SetFrameStrata("FULLSCREEN_DIALOG")

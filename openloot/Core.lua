@@ -136,11 +136,7 @@ function OL:Listen(eventName, enabled)
 end
 
 function OL:Wake(isReload)
-	if not self.awake then
-		self.awake = true
-		self:Listen("CHAT_MSG_ADDON", true)
-		self:Listen("GROUP_LEFT", true)
-	end
+	self.awake = true
 	self.RaidMode:SyncRollListen()
 	self.Council:EnsureSelf()
 	self.RaidMode:OnEnter(isReload)
@@ -156,11 +152,6 @@ function OL:Sleep()
 	end
 	self.awake = false
 	self:Listen("START_LOOT_ROLL", false)
-	self:Listen("CHAT_MSG_ADDON", false)
-	self:Listen("GROUP_LEFT", false)
-	if self.Session then
-		self.Session:Clear()
-	end
 end
 
 function OL:SyncPresence(isReload)
@@ -270,8 +261,6 @@ end
 events = CreateFrame("Frame")
 local quietEvents = {
 	START_LOOT_ROLL = true,
-	CHAT_MSG_ADDON = true,
-	GROUP_LEFT = true,
 }
 for eventName in pairs(handlers) do
 	if not quietEvents[eventName] then

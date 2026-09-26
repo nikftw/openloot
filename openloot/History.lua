@@ -23,6 +23,11 @@ end
 
 function History:AddAward(sessionId, award)
 	local session = self:Ensure(sessionId, award.time)
+	for _, existing in ipairs(session.awards) do
+		if existing.index == award.index then
+			return
+		end
+	end
 	session.awards[#session.awards + 1] = award
 	if self.frame and self.frame:IsShown() then
 		self:Refresh()
@@ -43,7 +48,7 @@ function History:EnsureFrame()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot History", 640, 412)
+	local frame = OL.UI:CreateWindow("OpenLoot History", 640, 406)
 	self.frame = frame
 	self.sessionButtons = {}
 	self.awardRows = {}
@@ -82,7 +87,7 @@ function History:EnsureFrame()
 	self.headerTime = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
 	self.headerTime:SetPoint("TOPRIGHT", -4, 0)
 	self.headerTime:SetWidth(92)
-	self.headerTime:SetJustifyH("LEFT")
+	self.headerTime:SetJustifyH("RIGHT")
 	self.headerTime:SetWordWrap(false)
 	self.headerTime:SetText("Time")
 	self.headerResponse = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
@@ -93,7 +98,7 @@ function History:EnsureFrame()
 	self.headerResponse:SetText("Response")
 
 	local scroll = OL.UI:CreateScroll(self.main)
-	scroll:SetPoint("TOPLEFT", 0, -20)
+	scroll:SetPoint("TOPLEFT", 0, -16)
 	scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	self.scroll = scroll
 end
@@ -272,7 +277,7 @@ function History:CreateAwardRow(parent)
 	row.time = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
 	row.time:SetWidth(92)
 	row.time:SetPoint("RIGHT", -4, 0)
-	row.time:SetJustifyH("LEFT")
+	row.time:SetJustifyH("RIGHT")
 	row.time:SetWordWrap(false)
 	row.response = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
 	row.response:SetWidth(76)

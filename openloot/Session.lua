@@ -39,7 +39,6 @@ end
 
 function Session:Init()
 	self.active = nil
-	self.pendingAwards = {}
 end
 
 function Session:IsActive()
@@ -108,14 +107,15 @@ function Session:Start(items)
 	local id = OL:ShortName(OL:FullName("player")) .. "-" .. tostring(time())
 	self.active = { id = id, items = items, owner = OL:FullName("player") }
 	OL.History:Ensure(id, time())
-	OL.Comms:Send(join({ "begin", id, #items }))
+	local test = OL.testSession and "1" or ""
+	OL.Comms:Send(join({ "begin", id, #items, test }))
 	for index, item in ipairs(items) do
 		OL.Comms:Send(join({
 			"item", id, index, field(item.ilvl), item.equipLoc or "", field(item.texture),
-			field(item.classID), field(item.subClassID), item.link,
+			field(item.classID), field(item.subClassID), item.link, test,
 		}))
 	end
-	OL.Comms:Send(join({ "vend", id }))
+	OL.Comms:Send(join({ "vend", id, test }))
 	self:ShowUI()
 	OL:Print(string.format("Session started with %d items.", #items))
 end
@@ -258,28 +258,6 @@ function Session:ApplyBallot(id, index, voter, choice)
 	OL.CouncilFrame:Refresh()
 end
 
-function Session:BuildRows(item)
-	local rows = {}
-	for _, member in ipairs(self:Roster()) do
-		local short = OL:ShortName(member.name)
-		local vote = item.votes[short] or {}
-		local info = OL.Council:Info(member.name)
-		rows[#rows + 1] = {
-			name = short,
-			class = member.classFile,
-			rank = info and info.rankName or "",
-			officerNote = info and info.officerNote or "",
-			response = vote.response,
-			slotIlvl = vote.slotIlvl,
-			diff = vote.diff,
-			note = vote.note,
-			s1 = vote.s1,
-			s2 = vote.s2,
-		}
-	end
-	return rows
-end
-
 function Session:Award(index, winner)
 	local item = self.active and self.active.items[index]
 	if not item or item.awardedTo or not (OL.Council:IsLocalCouncil() or OL.devMode) then
@@ -294,20 +272,10 @@ function Session:Award(index, winner)
 		link = item.link,
 		response = winnerVote and winnerVote.response or "",
 		time = time(),
-		rows = self:BuildRows(item),
 	}
 	OL.History:AddAward(self.active.id, award)
 	OL.Trade:Add(item, shortWinner, self.active.id, index)
-	local id = self.active.id
-	OL.Comms:Send(join({ "award", id, index, shortWinner, item.link, award.response, award.time }))
-	for _, row in ipairs(award.rows) do
-		OL.Comms:Send(join({
-			"arow", id, index, row.name, field(row.class), OL.Items:CleanNote(row.rank or ""), OL.Items:CleanNote(row.officerNote or ""),
-			field(row.response), field(row.slotIlvl), field(row.diff), OL.Items:CleanNote(row.note or ""),
-			field(row.s1), field(row.s2),
-		}))
-	end
-	OL.Comms:Send(join({ "aend", id, index }))
+	OL.Comms:Send(join({ "award", self.active.id, index, shortWinner, item.link, award.response, award.time }))
 	local channel = IsInRaid() and "RAID" or "PARTY"
 	pcall(SendChatMessage, OL:ShortName(shortWinner) .. " was awarded " .. item.link, channel)
 	OL.RaiderFrame:Refresh()
@@ -330,15 +298,10 @@ function Session:Close(index, reason)
 		link = item.link,
 		response = reason,
 		time = time(),
-		rows = self:BuildRows(item),
 	})
 	OL.Comms:Send(join({ "close", self.active.id, index, reason }))
 	OL.RaiderFrame:Refresh()
 	OL.CouncilFrame:AdvanceFrom(index)
-end
-
-local function awardKey(id, index)
-	return id .. ":" .. tostring(index)
 end
 
 local function fromLeader(sender)
@@ -350,18 +313,22 @@ function Session:OnComm(sender, op, fields)
 	if not fields[1] then
 		return
 	end
-	if (op == "begin" or op == "item" or op == "vend") and not fromLeader(sender) then
+	local leader = fromLeader(sender)
+	local testBegin = op == "begin" and fields[3] == "1"
+	local testItem = op == "item" and fields[9] == "1"
+	local testVend = op == "vend" and fields[2] == "1"
+	if (op == "begin" or op == "item" or op == "vend") and not leader and not testBegin and not testItem and not testVend then
 		return
 	end
 	if op == "begin" then
-		self.active = { id = fields[1], items = {}, owner = sender }
+		self.active = { id = fields[1], items = {}, owner = sender, test = testBegin }
 		OL.History:Ensure(fields[1], time())
 		OL.Council:Rebuild()
 		return
 	end
 	if op == "item" then
 		if not self.active or self.active.id ~= fields[1] then
-			self.active = { id = fields[1], items = {}, owner = sender }
+			self.active = { id = fields[1], items = {}, owner = sender, test = testItem }
 		end
 		local index = tonumber(fields[2])
 		if not index then
@@ -405,7 +372,6 @@ function Session:OnComm(sender, op, fields)
 					link = item.link,
 					response = reason,
 					time = time(),
-					rows = {},
 				})
 				OL.RaiderFrame:Refresh()
 				OL.CouncilFrame:AdvanceFrom(index)
@@ -414,52 +380,22 @@ function Session:OnComm(sender, op, fields)
 		return
 	end
 	if op == "award" then
-		local key = awardKey(fields[1], fields[2])
-		local pending = self.pendingAwards[key] or { rows = {} }
-		pending.header = {
-			index = tonumber(fields[2]),
-			winner = fields[3],
-			link = fields[4],
-			response = fields[5],
-			time = tonumber(fields[6]) or time(),
-		}
-		self.pendingAwards[key] = pending
-		if self.active and self.active.id == fields[1] and pending.header.index then
-			local item = self.active.items[pending.header.index]
-			if item then
+		local index = tonumber(fields[2])
+		if self.active and self.active.id == fields[1] and index then
+			local item = self.active.items[index]
+			if item and not item.awardedTo then
 				item.awardedTo = fields[3]
-				OL.Trade:Add(item, fields[3], fields[1], pending.header.index)
+				OL.Trade:Add(item, fields[3], fields[1], index)
 				OL.RaiderFrame:Refresh()
-				OL.CouncilFrame:AdvanceFrom(pending.header.index)
+				OL.CouncilFrame:AdvanceFrom(index)
 			end
 		end
-		return
-	end
-	if op == "arow" then
-		local key = awardKey(fields[1], fields[2])
-		local pending = self.pendingAwards[key] or { rows = {} }
-		pending.rows[#pending.rows + 1] = {
-			name = fields[3],
-			class = textOrNil(fields[4]),
-			rank = fields[5] or "",
-			officerNote = fields[6] or "",
-			response = textOrNil(fields[7]),
-			slotIlvl = numberOrNil(fields[8]),
-			diff = numberOrNil(fields[9]),
-			note = textOrNil(fields[10]),
-			s1 = textOrNil(fields[11]),
-			s2 = textOrNil(fields[12]),
-		}
-		self.pendingAwards[key] = pending
-		return
-	end
-	if op == "aend" then
-		local key = awardKey(fields[1], fields[2])
-		local pending = self.pendingAwards[key]
-		self.pendingAwards[key] = nil
-		if pending and pending.header then
-			pending.header.rows = pending.rows
-			OL.History:AddAward(fields[1], pending.header)
-		end
+		OL.History:AddAward(fields[1], {
+			index = index,
+			winner = fields[3],
+			link = fields[4],
+			response = fields[5] or "",
+			time = tonumber(fields[6]) or time(),
+		})
 	end
 end
