@@ -36,6 +36,31 @@ function UI:FlatButton(parent, text, width, height)
 	return button
 end
 
+function UI:CircleButton(parent, text, size)
+	local button = CreateFrame("Button", nil, parent)
+	button:SetSize(size or 16, size or 16)
+	local disc = button:CreateTexture(nil, "BACKGROUND")
+	disc:SetAllPoints()
+	disc:SetTexture(UI.WHITE)
+	disc:SetVertexColor(0.16, 0.16, 0.18, 1)
+	if disc.SetMask then
+		pcall(disc.SetMask, disc, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
+	end
+	local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	label:SetPoint("CENTER", 0, 1)
+	label:SetText(text or "")
+	button.label = label
+	button:SetScript("OnEnter", function(self)
+		if self:IsEnabled() then
+			disc:SetVertexColor(0.24, 0.24, 0.27, 1)
+		end
+	end)
+	button:SetScript("OnLeave", function()
+		disc:SetVertexColor(0.16, 0.16, 0.18, 1)
+	end)
+	return button
+end
+
 function UI:Icon(parent, size)
 	local holder = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	holder:SetSize(size, size)
@@ -255,7 +280,7 @@ function UI:ClassColor(classFile)
 end
 
 function UI:DiffColor(diff)
-	if not diff then
+	if diff == nil then
 		return 0.6, 0.6, 0.6
 	end
 	if diff > 0 then

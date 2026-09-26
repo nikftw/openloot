@@ -54,10 +54,18 @@ local ARMOR_SUBCLASS = {
 	WARLOCK = 1,
 }
 
-local tip = CreateFrame("GameTooltip", "OpenLootScanTip", nil, "GameTooltipTemplate")
-tip:SetOwner(UIParent, "ANCHOR_NONE")
+local tip
+
+local function scanTip()
+	if not tip then
+		tip = CreateFrame("GameTooltip", "OpenLootScanTip", nil, "GameTooltipTemplate")
+		tip:SetOwner(UIParent, "ANCHOR_NONE")
+	end
+	return tip
+end
 
 function Items:IsTradeable(bag, slot)
+	tip = scanTip()
 	tip:ClearLines()
 	local shown = pcall(tip.SetBagItem, tip, bag, slot)
 	if not shown then
@@ -79,6 +87,80 @@ function Items:IsTradeable(bag, slot)
 		end
 	end
 	return false
+end
+
+function Items:SlotLabel(equipLoc)
+	if not equipLoc or equipLoc == "" then
+		return ""
+	end
+	local globalName = _G[equipLoc]
+	if type(globalName) == "string" and globalName ~= "" then
+		return globalName
+	end
+	local fallback = {
+		INVTYPE_HEAD = "Head",
+		INVTYPE_NECK = "Neck",
+		INVTYPE_SHOULDER = "Shoulder",
+		INVTYPE_CHEST = "Chest",
+		INVTYPE_ROBE = "Chest",
+		INVTYPE_WAIST = "Waist",
+		INVTYPE_LEGS = "Legs",
+		INVTYPE_FEET = "Feet",
+		INVTYPE_WRIST = "Wrist",
+		INVTYPE_HAND = "Hands",
+		INVTYPE_FINGER = "Finger",
+		INVTYPE_TRINKET = "Trinket",
+		INVTYPE_CLOAK = "Back",
+		INVTYPE_WEAPON = "One-Hand",
+		INVTYPE_2HWEAPON = "Two-Hand",
+		INVTYPE_WEAPONMAINHAND = "Main Hand",
+		INVTYPE_WEAPONOFFHAND = "Off Hand",
+		INVTYPE_HOLDABLE = "Off Hand",
+		INVTYPE_SHIELD = "Off Hand",
+		INVTYPE_RANGED = "Ranged",
+		INVTYPE_RANGEDRIGHT = "Ranged",
+	}
+	return fallback[equipLoc] or ""
+end
+
+function Items:TypeLabel(classID, subClassID)
+	if classID == nil or subClassID == nil then
+		return ""
+	end
+	if C_Item and C_Item.GetItemSubClassInfo then
+		local ok, name = pcall(C_Item.GetItemSubClassInfo, classID, subClassID)
+		if ok and type(name) == "string" and name ~= "" then
+			return name
+		end
+	end
+	if GetItemSubClassInfo then
+		local ok, name = pcall(GetItemSubClassInfo, classID, subClassID)
+		if ok and type(name) == "string" and name ~= "" then
+			return name
+		end
+	end
+	return ""
+end
+
+function Items:RowMeta(item)
+	local parts = {}
+	if item.ilvl and item.ilvl > 0 then
+		parts[#parts + 1] = tostring(item.ilvl)
+	end
+	local typeName = self:TypeLabel(item.classID, item.subClassID)
+	local armorClass = Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4
+	local misc = item.classID == armorClass and item.subClassID == 0
+	if not misc and typeName ~= "" then
+		local lower = typeName:lower()
+		if lower ~= "miscellaneous" and lower ~= "misc" then
+			parts[#parts + 1] = typeName
+		end
+	end
+	local slotName = self:SlotLabel(item.equipLoc)
+	if slotName ~= "" then
+		parts[#parts + 1] = slotName
+	end
+	return table.concat(parts, " · ")
 end
 
 function Items:PlayerCanUse(link, equipLoc, classID, subClassID)
@@ -131,7 +213,7 @@ function Items:ScanBags()
 	local found = {}
 	local maxBag = NUM_BAG_SLOTS or 4
 	for bag = 0, maxBag do
-			local slots = C_Container.GetContainerNumSlots(bag) or 0
+		local slots = C_Container.GetContainerNumSlots(bag) or 0
 		for slot = 1, slots do
 			local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
 			if C_Item.DoesItemExist(location) then
@@ -141,6 +223,13 @@ function Items:ScanBags()
 					local bound = C_Item.IsBound(location)
 					if not bound or self:IsTradeable(bag, slot) then
 						local _, _, _, equipLoc, icon, classID, subClassID = C_Item.GetItemInfoInstant(link)
+						local guid
+						if C_Item.GetItemGUID then
+							local ok, value = pcall(C_Item.GetItemGUID, location)
+							if ok and type(value) == "string" and value ~= "" then
+								guid = value
+							end
+						end
 						found[#found + 1] = {
 							link = link,
 							ilvl = self:ItemLevel(link, location) or 0,
@@ -149,8 +238,11 @@ function Items:ScanBags()
 							quality = quality,
 							classID = classID,
 							subClassID = subClassID,
+							bag = bag,
+							slot = slot,
+							guid = guid,
 							votes = {},
-							rolls = {},
+							ballots = {},
 						}
 					end
 				end
@@ -204,6 +296,61 @@ function Items:Compare(lootLink, lootIlvl, equipLoc)
 		diff = lootIlvl - base
 	end
 	return base, diff, first, second
+end
+
+function Items:FindTradeSlot(entry, reserved)
+	local function free(bag, slot)
+		return bag and slot and not reserved[bag .. ":" .. slot]
+	end
+	local function guidAt(bag, slot)
+		if not entry.guid or not C_Item.GetItemGUID then
+			return nil
+		end
+		local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
+		if not C_Item.DoesItemExist(location) then
+			return nil
+		end
+		local ok, guid = pcall(C_Item.GetItemGUID, location)
+		if ok then
+			return guid
+		end
+		return nil
+	end
+	local function sameGuid(bag, slot)
+		local current = guidAt(bag, slot)
+		if not current or not entry.guid then
+			return false
+		end
+		local ok, match = pcall(function()
+			return current == entry.guid
+		end)
+		return ok and match or false
+	end
+	if entry.bag and entry.slot then
+		local info = C_Container.GetContainerItemInfo(entry.bag, entry.slot)
+		local keptGuid = sameGuid(entry.bag, entry.slot)
+		local sameLink = info and info.hyperlink == entry.link
+		if free(entry.bag, entry.slot) and (keptGuid or sameLink) then
+			return entry.bag, entry.slot
+		end
+	end
+	local maxBag = NUM_BAG_SLOTS or 4
+	local linkBag, linkSlot
+	for bag = 0, maxBag do
+		local slots = C_Container.GetContainerNumSlots(bag) or 0
+		for slot = 1, slots do
+			if free(bag, slot) then
+				if sameGuid(bag, slot) then
+					return bag, slot
+				end
+				local info = C_Container.GetContainerItemInfo(bag, slot)
+				if not linkBag and info and info.hyperlink == entry.link then
+					linkBag, linkSlot = bag, slot
+				end
+			end
+		end
+	end
+	return linkBag, linkSlot
 end
 
 function Items:CleanNote(text)

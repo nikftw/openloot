@@ -4,7 +4,6 @@ OL.Session = {}
 local Session = OL.Session
 
 local SEP = "\31"
-local rollPattern
 
 local function field(value)
 	if value == nil then
@@ -38,28 +37,17 @@ local function join(parts)
 	return table.concat(parts, SEP)
 end
 
-local function rollMatch(text)
-	if not rollPattern and RANDOM_ROLL_RESULT then
-		local pattern = RANDOM_ROLL_RESULT
-		pattern = pattern:gsub("[%(%)%-]", "%%%1")
-		pattern = pattern:gsub("%%s", "(.+)")
-		pattern = pattern:gsub("%%d", "(%%d+)")
-		rollPattern = pattern
-	end
-	if not rollPattern then
-		return nil
-	end
-	return text:match(rollPattern)
-end
-
 function Session:Init()
 	self.active = nil
-	self.pendingRoll = nil
 	self.pendingAwards = {}
 end
 
 function Session:IsActive()
 	return self.active ~= nil
+end
+
+function Session:IsHolder()
+	return self.active and OL:ShortName(self.active.owner or "") == OL:ShortName(OL:FullName("player"))
 end
 
 function Session:ItemCount()
@@ -70,6 +58,9 @@ function Session:ItemCount()
 end
 
 function Session:Roster()
+	if OL.devRoster then
+		return OL.devRoster
+	end
 	local roster = {}
 	if not IsInGroup() then
 		local _, classFile = UnitClass("player")
@@ -105,7 +96,6 @@ end
 
 function Session:Clear()
 	self.active = nil
-	self.pendingRoll = nil
 	if OL.RaiderFrame then
 		OL.RaiderFrame:Hide()
 	end
@@ -131,10 +121,15 @@ function Session:Start(items)
 end
 
 function Session:Run()
+	if not OL.devMode and not OL:IsLive() then
+		OL:Print("OpenLoot only runs inside a raid.")
+		return
+	end
 	if not OL.RaidMode:IsRunner() then
 		OL:Print("Only the raid leader running OpenLoot can start a session.")
 		return
 	end
+	OL.Council:Rebuild()
 	local items = OL.Items:ScanBags()
 	if #items == 0 then
 		OL:Print("No unbound or tradeable blue-or-better items in your bags.")
@@ -183,6 +178,21 @@ function Session:SetResponse(index, responseId, note)
 	OL.CouncilFrame:Refresh()
 end
 
+function Session:ClearResponse(index)
+	local item = self.active and self.active.items[index]
+	if not item or item.awardedTo or not item.myResponse then
+		return
+	end
+	item.myResponse = nil
+	local name = OL:ShortName(OL:FullName("player"))
+	item.votes[name] = nil
+	OL.Comms:Send(join({
+		"vote", self.active.id, index, "", "", "", item.myNote or "", "", "",
+	}))
+	OL.RaiderFrame:Refresh()
+	OL.CouncilFrame:Refresh()
+end
+
 function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, first, second)
 	if not index or not self.active or self.active.id ~= id then
 		return
@@ -192,6 +202,15 @@ function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, fi
 		return
 	end
 	local name = OL:ShortName(sender)
+	if not response or response == "" then
+		item.votes[name] = nil
+		if name == OL:ShortName(OL:FullName("player")) then
+			item.myResponse = nil
+			OL.RaiderFrame:Refresh()
+		end
+		OL.CouncilFrame:Refresh()
+		return
+	end
 	item.votes[name] = {
 		response = response,
 		note = note,
@@ -203,46 +222,40 @@ function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, fi
 	OL.CouncilFrame:Refresh()
 end
 
-function Session:ApplyRoll(id, index, name, roll)
-	if not self.active or self.active.id ~= id then
+function Session:CastBallot(index, candidate)
+	local item = self.active and self.active.items[index]
+	if not item or item.awardedTo or not (OL.Council:IsLocalCouncil() or OL.devMode) then
 		return
 	end
-	local item = self.active.items[index]
-	if not item or not roll then
-		return
+	item.ballots = item.ballots or {}
+	local mine = OL:ShortName(OL:FullName("player"))
+	local choice = OL:ShortName(candidate)
+	if item.ballots[mine] == choice then
+		item.ballots[mine] = nil
+		choice = ""
+	else
+		item.ballots[mine] = choice
 	end
-	item.rolls[OL:ShortName(name)] = roll
+	OL.Comms:Send(join({ "ballot", self.active.id, index, mine, choice }))
 	OL.CouncilFrame:Refresh()
 end
 
-function Session:RequestRoll(index, name)
-	local item = self.active and self.active.items[index]
-	if not item or not OL.Council:IsLocalCouncil() then
+function Session:ApplyBallot(id, index, voter, choice)
+	if not index or not self.active or self.active.id ~= id then
 		return
 	end
-	OL.Comms:Send(join({ "rollq", self.active.id, index, name, item.link }))
-end
-
-function Session:OnSystemRoll(text)
-	if not self.pendingRoll then
+	local item = self.active.items[index]
+	if not item then
 		return
 	end
-	local who, roll = rollMatch(text)
-	if not who or not roll then
-		who, roll = text:match("^(.-)%s+rolls%s+(%d+)")
+	item.ballots = item.ballots or {}
+	local name = OL:ShortName(voter)
+	if not choice or choice == "" then
+		item.ballots[name] = nil
+	else
+		item.ballots[name] = OL:ShortName(choice)
 	end
-	if not who or not roll then
-		return
-	end
-	who = who:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-	if OL:ShortName(who) ~= OL:ShortName(OL:FullName("player")) then
-		return
-	end
-	local pending = self.pendingRoll
-	self.pendingRoll = nil
-	local name = OL:ShortName(OL:FullName("player"))
-	self:ApplyRoll(pending.id, pending.index, name, tonumber(roll))
-	OL.Comms:Send(join({ "roll", pending.id, pending.index, name, roll }))
+	OL.CouncilFrame:Refresh()
 end
 
 function Session:BuildRows(item)
@@ -259,7 +272,6 @@ function Session:BuildRows(item)
 			response = vote.response,
 			slotIlvl = vote.slotIlvl,
 			diff = vote.diff,
-			roll = item.rolls[short],
 			note = vote.note,
 			s1 = vote.s1,
 			s2 = vote.s2,
@@ -270,7 +282,7 @@ end
 
 function Session:Award(index, winner)
 	local item = self.active and self.active.items[index]
-	if not item or item.awardedTo or not OL.Council:IsLocalCouncil() then
+	if not item or item.awardedTo or not (OL.Council:IsLocalCouncil() or OL.devMode) then
 		return
 	end
 	local shortWinner = OL:ShortName(winner)
@@ -285,18 +297,19 @@ function Session:Award(index, winner)
 		rows = self:BuildRows(item),
 	}
 	OL.History:AddAward(self.active.id, award)
+	OL.Trade:Add(item, shortWinner, self.active.id, index)
 	local id = self.active.id
 	OL.Comms:Send(join({ "award", id, index, shortWinner, item.link, award.response, award.time }))
 	for _, row in ipairs(award.rows) do
 		OL.Comms:Send(join({
 			"arow", id, index, row.name, field(row.class), OL.Items:CleanNote(row.rank or ""), OL.Items:CleanNote(row.officerNote or ""),
-			field(row.response), field(row.slotIlvl), field(row.diff), field(row.roll), OL.Items:CleanNote(row.note or ""),
+			field(row.response), field(row.slotIlvl), field(row.diff), OL.Items:CleanNote(row.note or ""),
 			field(row.s1), field(row.s2),
 		}))
 	end
 	OL.Comms:Send(join({ "aend", id, index }))
 	local channel = IsInRaid() and "RAID" or "PARTY"
-	pcall(SendChatMessage, shortWinner .. " was awarded " .. item.link, channel)
+	pcall(SendChatMessage, OL:ShortName(shortWinner) .. " was awarded " .. item.link, channel)
 	OL.RaiderFrame:Refresh()
 	OL.CouncilFrame:Refresh()
 end
@@ -317,12 +330,10 @@ function Session:OnComm(sender, op, fields)
 	if (op == "begin" or op == "item" or op == "vend") and not fromLeader(sender) then
 		return
 	end
-	if op == "roll" and OL:ShortName(sender) ~= OL:ShortName(fields[3] or "") then
-		return
-	end
 	if op == "begin" then
 		self.active = { id = fields[1], items = {}, owner = sender }
 		OL.History:Ensure(fields[1], time())
+		OL.Council:Rebuild()
 		return
 	end
 	if op == "item" then
@@ -341,7 +352,7 @@ function Session:OnComm(sender, op, fields)
 			classID = numberOrNil(fields[6]),
 			subClassID = numberOrNil(fields[7]),
 			votes = {},
-			rolls = {},
+			ballots = {},
 		}
 		self:ShowUI()
 		return
@@ -350,29 +361,12 @@ function Session:OnComm(sender, op, fields)
 		self:ShowUI()
 		return
 	end
+	if op == "ballot" then
+		self:ApplyBallot(fields[1], tonumber(fields[2]), fields[3], textOrNil(fields[4]))
+		return
+	end
 	if op == "vote" then
 		self:ApplyVote(fields[1], tonumber(fields[2]), sender, textOrNil(fields[3]), numberOrNil(fields[4]), numberOrNil(fields[5]), textOrNil(fields[6]), textOrNil(fields[7]), textOrNil(fields[8]))
-		return
-	end
-	if op == "rollq" then
-		local target = fields[3]
-		if OL:ShortName(target) ~= OL:ShortName(OL:FullName("player")) then
-			return
-		end
-		local id, index, link = fields[1], tonumber(fields[2]), fields[4]
-		OL.UI:Prompt("OpenLoot", "Roll on " .. (link or "this item") .. "?", {
-			{ text = "Roll", onClick = function()
-				self.pendingRoll = { id = id, index = index }
-				if not pcall(RandomRoll, 1, 100) then
-					self.pendingRoll = nil
-				end
-			end },
-			{ text = "Close" },
-		})
-		return
-	end
-	if op == "roll" then
-		self:ApplyRoll(fields[1], tonumber(fields[2]), fields[3], tonumber(fields[4]))
 		return
 	end
 	if op == "award" then
@@ -390,6 +384,7 @@ function Session:OnComm(sender, op, fields)
 			local item = self.active.items[pending.header.index]
 			if item then
 				item.awardedTo = fields[3]
+				OL.Trade:Add(item, fields[3], fields[1], pending.header.index)
 				OL.RaiderFrame:Refresh()
 				OL.CouncilFrame:Refresh()
 			end
@@ -407,10 +402,9 @@ function Session:OnComm(sender, op, fields)
 			response = textOrNil(fields[7]),
 			slotIlvl = numberOrNil(fields[8]),
 			diff = numberOrNil(fields[9]),
-			roll = numberOrNil(fields[10]),
-			note = textOrNil(fields[11]),
-			s1 = textOrNil(fields[12]),
-			s2 = textOrNil(fields[13]),
+			note = textOrNil(fields[10]),
+			s1 = textOrNil(fields[11]),
+			s2 = textOrNil(fields[12]),
 		}
 		self.pendingAwards[key] = pending
 		return

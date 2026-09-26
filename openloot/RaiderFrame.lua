@@ -3,11 +3,28 @@ local OL = OpenLoot
 OL.RaiderFrame = {}
 local Frame = OL.RaiderFrame
 
+local ROW_HEIGHT = 44
+
 local ROW_BUTTONS = {
-	{ id = "BIS", text = "BIS", width = 52 },
-	{ id = "UPGRADE", text = "Upgrade", width = 72 },
-	{ id = "OFFSPEC", text = "Offspec", width = 70 },
-	{ id = "PASS", text = "Pass", width = 52 },
+	{ id = "BIS", text = "BIS", width = 40 },
+	{ id = "UPGRADE", text = "Upgrade", width = 62 },
+	{ id = "OFFSPEC", text = "Offspec", width = 58 },
+	{ id = "PASS", text = "Pass", width = 40 },
+}
+
+local CONTROL_WIDTH = 0
+for index, spec in ipairs(ROW_BUTTONS) do
+	CONTROL_WIDTH = CONTROL_WIDTH + spec.width
+	if index > 1 then
+		CONTROL_WIDTH = CONTROL_WIDTH + 4
+	end
+end
+
+local RESPONSE_TEXT = {
+	BIS = "BIS",
+	UPGRADE = "Upgrade",
+	OFFSPEC = "Offspec",
+	PASS = "Pass",
 }
 
 function Frame:Ensure()
@@ -18,7 +35,6 @@ function Frame:Ensure()
 	self.frame = frame
 	self.rows = {}
 	self.showAll = false
-	self.openNote = nil
 
 	local scroll = OL.UI:CreateScroll(frame.content)
 	scroll:SetPoint("TOPLEFT", 0, 0)
@@ -60,10 +76,6 @@ function Frame:Refresh()
 	end
 	self.refreshing = true
 	local session = OL.Session.active
-	if session and self.sessionId ~= session.id then
-		self.sessionId = session.id
-		self.openNote = nil
-	end
 	local items = session and session.items or {}
 	local visible = {}
 	for index, item in ipairs(items) do
@@ -95,39 +107,62 @@ function Frame:Refresh()
 end
 
 function Frame:CreateRow(parent)
-	local row = CreateFrame("Frame", nil, parent)
-	row:SetHeight(62)
+	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	row:SetHeight(ROW_HEIGHT)
+	row:SetBackdrop({ bgFile = OL.UI.WHITE })
+	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
+
 	row.icon = OL.UI:Icon(row, 36)
-	row.icon:SetPoint("TOPLEFT", 0, 0)
-	row.ilvl = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.ilvl:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -10)
-	row.link = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	row.link:SetPoint("LEFT", row.icon, "RIGHT", 8, 0)
-	row.link:SetPoint("RIGHT", row.ilvl, "LEFT", -8, 0)
+	row.icon:SetPoint("LEFT", 4, 0)
+	row.link = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.link:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -2)
 	row.link:SetJustifyH("LEFT")
+	row.link:SetWordWrap(false)
+	row.meta = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.meta:SetPoint("TOPLEFT", row.link, "BOTTOMLEFT", 0, -2)
+	row.meta:SetJustifyH("LEFT")
+	row.meta:SetWordWrap(false)
+
+	row.controls = CreateFrame("Frame", nil, row)
+	row.controls:SetWidth(CONTROL_WIDTH)
+	row.controls:SetPoint("TOPRIGHT", -4, 0)
+	row.controls:SetPoint("BOTTOMRIGHT", -4, 0)
+	row.link:SetPoint("RIGHT", row.controls, "LEFT", -8, 0)
+	row.meta:SetPoint("RIGHT", row.controls, "LEFT", -8, 0)
+
 	row.buttons = {}
 	local x = 0
 	for _, spec in ipairs(ROW_BUTTONS) do
-		local button = OL.UI:FlatButton(row, spec.text, spec.width, 18)
+		local button = OL.UI:FlatButton(row.controls, spec.text, spec.width, 18)
 		button.responseId = spec.id
-		button:SetPoint("TOPLEFT", row, "TOPLEFT", x, -40)
+		button:SetPoint("TOPLEFT", row.controls, "TOPLEFT", x, -2)
 		row.buttons[#row.buttons + 1] = button
 		x = x + spec.width + 4
 	end
-	row.noteButton = OL.UI:FlatButton(row, "Note", 52, 18)
-	row.noteButton:SetPoint("TOPLEFT", row, "TOPLEFT", x, -40)
-	row.noteBox = CreateFrame("EditBox", nil, row, "BackdropTemplate")
-	row.noteBox:SetHeight(20)
-	row.noteBox:SetPoint("TOPLEFT", row, "TOPLEFT", 0, -62)
-	row.noteBox:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+	row.choice = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	row.choice:SetPoint("TOPLEFT", row.controls, "TOPLEFT", 0, -4)
+	row.choice:Hide()
+	row.back = OL.UI:CircleButton(row.controls, "‹", 16)
+	row.back:SetPoint("LEFT", row.choice, "RIGHT", 6, 0)
+	row.back:Hide()
+
+	row.noteLabel = row.controls:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	row.noteLabel:SetPoint("BOTTOMLEFT", row.controls, "BOTTOMLEFT", 0, 3)
+	row.noteLabel:SetText("Note")
+	row.noteBox = CreateFrame("EditBox", nil, row.controls, "BackdropTemplate")
+	row.noteBox:SetHeight(18)
+	row.save = OL.UI:FlatButton(row.controls, "Save", 44, 18)
+	row.save:SetPoint("BOTTOMRIGHT", row.controls, "BOTTOMRIGHT", 0, 2)
+	row.noteBox:SetPoint("BOTTOMLEFT", row.noteLabel, "BOTTOMRIGHT", 6, -1)
+	row.noteBox:SetPoint("BOTTOMRIGHT", row.save, "BOTTOMLEFT", -4, 0)
 	row.noteBox:SetAutoFocus(false)
 	row.noteBox:SetFontObject(GameFontHighlightSmall)
 	row.noteBox:SetMaxLetters(80)
-	row.noteBox:SetTextInsets(6, 6, 2, 2)
+	row.noteBox:SetTextInsets(6, 4, 0, 0)
 	row.noteBox:SetBackdrop({ bgFile = OL.UI.WHITE, edgeFile = OL.UI.WHITE, edgeSize = 1 })
-	row.noteBox:SetBackdropColor(0.1, 0.1, 0.12, 1)
+	row.noteBox:SetBackdropColor(0.07, 0.07, 0.08, 1)
 	row.noteBox:SetBackdropBorderColor(0.3, 0.3, 0.32, 1)
-	row.noteBox:Hide()
+
 	row.icon:EnableMouse(true)
 	row.icon:SetScript("OnEnter", function(self)
 		OL.UI:ItemTip(self, row.linkText)
@@ -142,59 +177,43 @@ function Frame:FillRow(row, index, item)
 	row.linkText = item.link
 	row.icon:SetIcon(item.texture)
 	row.link:SetText(item.link)
-	row.ilvl:SetText(item.ilvl and item.ilvl > 0 and tostring(item.ilvl) or "")
+	row.meta:SetText(OL.Items:RowMeta(item))
 	local awarded = item.awardedTo ~= nil
+	local locked = item.myResponse ~= nil and not awarded
 	for _, button in ipairs(row.buttons) do
-		local selected = item.myResponse == button.responseId
-		if selected then
-			button:SetBaseColor(0.2, 0.38, 0.28, 1)
-		else
-			button:SetBaseColor(0.16, 0.16, 0.18, 1)
-		end
+		button:SetShown(not locked and not awarded)
 		button:SetEnabled(not awarded)
+		button:SetBaseColor(0.16, 0.16, 0.18, 1)
 		button:SetScript("OnClick", function()
 			OL.Session:SetResponse(index, button.responseId, item.myNote)
 		end)
 	end
-	if item.myNote and item.myNote ~= "" then
-		row.noteButton:SetBaseColor(0.2, 0.28, 0.38, 1)
+	row.choice:SetShown(locked or awarded)
+	if awarded then
+		row.choice:SetText("Awarded " .. OL:ShortName(item.awardedTo or ""))
 	else
-		row.noteButton:SetBaseColor(0.16, 0.16, 0.18, 1)
+		row.choice:SetText(RESPONSE_TEXT[item.myResponse] or "")
 	end
-	row.noteButton:SetEnabled(not awarded)
-	row.noteButton:SetScript("OnClick", function()
-		if self.openNote == index then
-			OL.Session:SetResponse(index, item.myResponse, row.noteBox:GetText())
-			self.openNote = nil
-		else
-			self.openNote = index
-		end
-		self:Refresh()
-		if self.openNote == index then
-			row.noteBox:SetFocus()
-		end
+	row.back:SetShown(locked)
+	row.back:SetScript("OnClick", function()
+		OL.Session:ClearResponse(index)
 	end)
-	local showNote = self.openNote == index and not awarded
-	row.noteBox:SetShown(showNote)
-	if showNote and not row.noteBox:HasFocus() then
+	row.noteBox:SetEnabled(not awarded)
+	row.save:SetShown(not awarded)
+	row.save:SetScript("OnClick", function()
+		OL.Session:SetResponse(index, item.myResponse, row.noteBox:GetText())
+	end)
+	if not row.noteBox:HasFocus() then
 		row.noteBox:SetText(item.myNote or "")
 	end
 	row.noteBox:SetScript("OnEnterPressed", function(edit)
 		edit:ClearFocus()
-		OL.Session:SetResponse(index, item.myResponse, edit:GetText())
-		self.openNote = nil
-		self:Refresh()
-	end)
-	row.noteBox:SetScript("OnEditFocusLost", function(edit)
-		if self.refreshing or self.openNote ~= index then
+		if awarded then
 			return
 		end
 		OL.Session:SetResponse(index, item.myResponse, edit:GetText())
 	end)
-	if showNote then
-		row:SetHeight(86)
-		return 86
-	end
-	row:SetHeight(62)
-	return 62
+	row.noteBox:SetScript("OnEditFocusLost", nil)
+	row:SetHeight(ROW_HEIGHT)
+	return ROW_HEIGHT
 end

@@ -8,7 +8,6 @@ local CHUNK = "\2"
 local MAX_PART = 200
 local queue = {}
 local incoming = {}
-local ticker
 
 local function splitHead(text, count)
 	local fields = {}
@@ -55,11 +54,6 @@ function Comms:Init()
 	if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
 		C_ChatInfo.RegisterAddonMessagePrefix(OL.PREFIX)
 	end
-	if not ticker then
-		ticker = C_Timer.NewTicker(0.15, function()
-			self:Pump()
-		end)
-	end
 end
 
 function Comms:Enqueue(payload)
@@ -67,8 +61,12 @@ function Comms:Enqueue(payload)
 end
 
 function Comms:Send(payload)
+	if OL.devMode or not OL:IsLive() then
+		return
+	end
 	if #payload <= MAX_PART then
 		self:Enqueue(payload)
+		self:Kick()
 		return
 	end
 	local id = tostring(time()) .. tostring(math.random(100, 999))
@@ -77,6 +75,22 @@ function Comms:Send(payload)
 		local part = payload:sub((index - 1) * MAX_PART + 1, index * MAX_PART)
 		self:Enqueue(CHUNK .. id .. SEP .. index .. SEP .. total .. SEP .. part)
 	end
+	self:Kick()
+end
+
+function Comms:Kick()
+	if self.pumping then
+		return
+	end
+	self.pumping = true
+	local function step()
+		if not self:Pump() or not queue[1] then
+			self.pumping = false
+			return
+		end
+		C_Timer.After(0.15, step)
+	end
+	step()
 end
 
 function Comms:Clear()
@@ -86,11 +100,11 @@ end
 function Comms:Pump()
 	local payload = queue[1]
 	if not payload then
-		return
+		return false
 	end
 	local channel = self:Channel()
 	if not channel then
-		return
+		return false
 	end
 	table.remove(queue, 1)
 	if C_ChatInfo and C_ChatInfo.SendAddonMessage then
@@ -98,6 +112,7 @@ function Comms:Pump()
 	elseif SendAddonMessage then
 		SendAddonMessage(OL.PREFIX, payload, channel)
 	end
+	return true
 end
 
 function Comms:IsSelf(sender)
@@ -151,7 +166,9 @@ end
 function OL:OnComm(sender, op, fields)
 	if op == "state" or op == "stateq" then
 		self.RaidMode:OnComm(sender, op, fields)
-	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "award" or op == "arow" or op == "aend" or op == "rollq" or op == "roll" then
+	elseif op == "ver" or op == "verq" then
+		self.Versions:OnComm(sender, op, fields)
+	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "arow" or op == "aend" then
 		self.Session:OnComm(sender, op, fields)
 	end
 end

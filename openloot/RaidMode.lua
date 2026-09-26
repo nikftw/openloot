@@ -12,9 +12,7 @@ local function inRaidInstance()
 end
 
 function Raid:Init()
-	self.pendingPrompt = false
 	self.wasInRaidInstance = false
-	self.rosterTick = 0
 end
 
 function Raid:GetPass()
@@ -72,6 +70,10 @@ function Raid:IsOn()
 	return raid and raid.on or false
 end
 
+function Raid:SyncRollListen()
+	OL:Listen("START_LOOT_ROLL", self:IsRunner() and true or false)
+end
+
 function Raid:LeaderName()
 	if UnitIsGroupLeader("player") then
 		return OL:FullName("player")
@@ -102,14 +104,17 @@ end
 function Raid:Enable()
 	OL.db.declinedMap = nil
 	OL.db.activeRaid = { on = true, mapID = mapID(), isRunner = true }
+	self:SyncRollListen()
 	self:ArmRunner()
 	self:Broadcast(true)
+	OL.Versions:Query(true)
 	OL:Print("OpenLoot is on. You will automatically need on loot.")
 end
 
 function Raid:Disable()
 	local wasRunner = self:IsRunner()
 	OL.db.activeRaid = nil
+	self:SyncRollListen()
 	self:RestorePass()
 	if wasRunner then
 		self:Broadcast(false)
@@ -118,7 +123,7 @@ function Raid:Disable()
 end
 
 function Raid:EnableFromSlash()
-	if not IsInGroup() then
+	if not OL:IsLive() then
 		OL:Print("You need to be in a raid.")
 		return
 	end
@@ -138,7 +143,7 @@ function Raid:DisableFromSlash()
 end
 
 function Raid:ConsiderPrompt()
-	if not inRaidInstance() or not self:CanLead() then
+	if not OL:IsLive() or not self:CanLead() then
 		return
 	end
 	if self:IsOn() then
@@ -147,30 +152,30 @@ function Raid:ConsiderPrompt()
 	if OL.db.declinedMap and OL.db.declinedMap == mapID() then
 		return
 	end
-	if InCombatLockdown() then
-		self.pendingPrompt = true
+	if self.promptOpen then
 		return
 	end
-	self.pendingPrompt = false
+	self.promptOpen = true
 	OL.UI:Prompt("OpenLoot", "Do you want to run OpenLoot for this raid?", {
 		{ text = "Yes", onClick = function()
+			self.promptOpen = false
 			self:Enable()
 		end },
 		{ text = "No", onClick = function()
+			self.promptOpen = false
 			OL.db.declinedMap = mapID()
 		end },
 	})
 end
 
-function Raid:OnLeaveCombat()
-	if self.pendingPrompt then
-		self:ConsiderPrompt()
-	end
-end
-
 function Raid:OnZone()
 	local inside = inRaidInstance()
 	if self.wasInRaidInstance and not inside then
+		self.promptOpen = false
+		self.askedMap = nil
+		self.restoredMap = nil
+		self.reloadAsked = nil
+		self.reloadPushed = nil
 		if self:IsOn() then
 			self:Disable()
 		else
@@ -179,25 +184,47 @@ function Raid:OnZone()
 		OL.db.declinedMap = nil
 	end
 	self.wasInRaidInstance = inside
-	if inside then
-		self:RestoreIfSaved()
-		self:ConsiderPrompt()
-	end
 end
 
-function Raid:RestoreIfSaved()
+function Raid:OnEnter(isReload)
+	local map = mapID()
+	self.wasInRaidInstance = true
+	self:RestoreIfSaved(isReload, map)
+	local shouldAsk = self.askedMap ~= map
+	if isReload and not self.reloadAsked then
+		shouldAsk = true
+		self.reloadAsked = true
+	end
+	if shouldAsk then
+		self.askedMap = map
+		self:RequestState()
+	end
+	self:ConsiderPrompt()
+end
+
+function Raid:RestoreIfSaved(isReload, map)
 	local raid = OL.db.activeRaid
 	if not raid or not raid.on then
 		return
 	end
-	if raid.mapID and raid.mapID ~= mapID() then
+	map = map or mapID()
+	if raid.mapID and raid.mapID ~= map then
 		OL.db.activeRaid = nil
+		self:SyncRollListen()
 		self:RestorePass()
 		return
 	end
 	if raid.isRunner and UnitIsGroupLeader("player") then
 		self:ArmRunner()
-		self:Broadcast(true)
+		local shouldPush = self.restoredMap ~= map
+		if isReload and not self.reloadPushed then
+			shouldPush = true
+			self.reloadPushed = true
+		end
+		if shouldPush then
+			self.restoredMap = map
+			self:Broadcast(true)
+		end
 	end
 end
 
@@ -208,27 +235,15 @@ function Raid:RequestState()
 	OL.Comms:Send("stateq")
 end
 
-function Raid:OnRoster()
-	if not IsInGroup() then
-		return
-	end
-	local now = GetTime()
-	if self.lastRoster and now - self.lastRoster < 2 then
-		return
-	end
-	self.lastRoster = now
-	if self:IsRunner() then
-		self:Broadcast(true)
-		return
-	end
-	if not UnitIsGroupLeader("player") then
-		self:RequestState()
-	end
-end
-
 function Raid:OnGroupLeft()
+	self.askedMap = nil
+	self.restoredMap = nil
+	self.reloadAsked = nil
+	self.reloadPushed = nil
+	self.promptOpen = false
 	OL.Comms:Clear()
 	OL.db.activeRaid = nil
+	self:SyncRollListen()
 	self:RestorePass()
 	if OL.Session then
 		OL.Session:Clear()
@@ -271,12 +286,14 @@ function Raid:OnComm(sender, op, fields)
 			return
 		end
 		OL.db.activeRaid = { on = true, mapID = mapID(), isRunner = false }
+		self:SyncRollListen()
 		self:ApplyRaiderPass()
 		if not wasOn then
 			OL:Print("Pass on Loot is on for this OpenLoot raid.")
 		end
 	else
 		OL.db.activeRaid = nil
+		self:SyncRollListen()
 		self:RestorePass()
 		if wasOn then
 			OL:Print("OpenLoot is off. Pass on Loot was restored.")

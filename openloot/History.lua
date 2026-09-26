@@ -5,7 +5,6 @@ local History = OL.History
 
 function History:Init()
 	self.selected = nil
-	self.detailAward = nil
 end
 
 function History:Ensure(id, when)
@@ -28,18 +27,12 @@ function History:AddAward(sessionId, award)
 	if self.frame and self.frame:IsShown() then
 		self:Refresh()
 	end
-	if self.detail and self.detail:IsShown() and self.detailAward == award then
-		self:FillDetail(award)
-	end
 end
 
 function History:Toggle()
 	self:EnsureFrame()
 	if self.frame:IsShown() then
 		self.frame:Hide()
-		if self.detail then
-			self.detail:Hide()
-		end
 	else
 		self.frame:Show()
 		self:Refresh()
@@ -60,37 +53,112 @@ function History:EnsureFrame()
 	self.sessionPane:SetPoint("BOTTOMLEFT", 0, 0)
 	self.sessionPane:SetWidth(130)
 
+	self.exportButton = OL.UI:FlatButton(self.sessionPane, "Export", 120, 22)
+	self.exportButton:SetPoint("TOPLEFT", 0, 0)
+	self.exportButton:SetScript("OnClick", function()
+		self:ShowExport()
+	end)
+
 	local sessionScroll = OL.UI:CreateScroll(self.sessionPane)
-	sessionScroll:SetAllPoints()
+	sessionScroll:SetPoint("TOPLEFT", 0, -28)
+	sessionScroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	self.sessionScroll = sessionScroll
 
 	self.main = CreateFrame("Frame", nil, frame.content)
 	self.main:SetPoint("TOPLEFT", self.sessionPane, "TOPRIGHT", 8, 0)
 	self.main:SetPoint("BOTTOMRIGHT", 0, 0)
 
-	self.header = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.header:SetPoint("TOPLEFT", 0, 0)
-	self.header:SetText("Name    Time    Item    Response")
+	self.headerName = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	self.headerName:SetPoint("TOPLEFT", 4, 0)
+	self.headerName:SetWidth(150)
+	self.headerName:SetJustifyH("LEFT")
+	self.headerName:SetText("Name")
+	self.headerTime = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	self.headerTime:SetPoint("TOPLEFT", self.headerName, "TOPRIGHT", 8, 0)
+	self.headerTime:SetWidth(100)
+	self.headerTime:SetJustifyH("LEFT")
+	self.headerTime:SetText("Time")
+	self.headerItem = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	self.headerItem:SetPoint("TOPLEFT", self.headerTime, "TOPRIGHT", 8, 0)
+	self.headerItem:SetJustifyH("LEFT")
+	self.headerItem:SetText("Item")
+	self.headerResponse = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	self.headerResponse:SetPoint("TOPRIGHT", 0, 0)
+	self.headerResponse:SetJustifyH("LEFT")
+	self.headerResponse:SetText("Response")
 
 	local scroll = OL.UI:CreateScroll(self.main)
 	scroll:SetPoint("TOPLEFT", 0, -18)
 	scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	self.scroll = scroll
+end
 
-	local detail = OL.UI:CreateWindow("OpenLoot Session", 760, 360)
-	detail:SetFrameStrata("HIGH")
-	self.detail = detail
-	self.detailRows = {}
-	self.detailTitle = detail.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-	self.detailTitle:SetPoint("TOPLEFT", 0, 0)
-	self.detailTitle:SetPoint("TOPRIGHT", 0, 0)
-	self.detailTitle:SetJustifyH("LEFT")
-	self.detailHeader = detail.content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.detailHeader:SetPoint("TOPLEFT", 0, -18)
-	self.detailHeader:SetText("Name    Rank    Note    Response    ilvl    Diff    s1    s2    Roll")
-	self.detailScroll = OL.UI:CreateScroll(detail.content)
-	self.detailScroll:SetPoint("TOPLEFT", 0, -36)
-	self.detailScroll:SetPoint("BOTTOMRIGHT", 0, 0)
+function History:ItemLabel(link)
+	if not link or link == "" then
+		return ""
+	end
+	local name = link:match("%[(.-)%]")
+	if name and name ~= "" then
+		return name
+	end
+	return link
+end
+
+function History:CsvCell(text)
+	text = tostring(text or ""):gsub('"', '""')
+	return '"' .. text .. '"'
+end
+
+function History:Csv()
+	local lines = { "Name,Time,Item,Response" }
+	for _, entry in ipairs(self:VisibleAwards()) do
+		local award = entry.award
+		lines[#lines + 1] = table.concat({
+			self:CsvCell(OL:ShortName(award.winner or "")),
+			self:CsvCell(date("%d %b %H:%M", award.time or entry.session.time)),
+			self:CsvCell(self:ItemLabel(award.link)),
+			self:CsvCell(award.response and OL:ResponseText(award.response) or ""),
+		}, ",")
+	end
+	return table.concat(lines, "\n")
+end
+
+function History:EnsureExport()
+	if self.exportFrame then
+		return
+	end
+	local frame = OL.UI:CreateWindow("OpenLoot Export", 520, 360)
+	frame:SetFrameStrata("DIALOG")
+	local scroll = OL.UI:CreateScroll(frame.content)
+	scroll:SetAllPoints()
+	local box = CreateFrame("EditBox", nil, scroll.content)
+	box:SetMultiLine(true)
+	box:SetFontObject(GameFontHighlightSmall)
+	box:SetAutoFocus(false)
+	box:SetPoint("TOPLEFT", 0, 0)
+	box:SetWidth(490)
+	box:SetScript("OnEscapePressed", function()
+		frame:Hide()
+	end)
+	self.exportBox = box
+	self.exportScroll = scroll
+	self.exportFrame = frame
+end
+
+function History:ShowExport()
+	self:EnsureFrame()
+	self:EnsureExport()
+	local text = self:Csv()
+	local lines = 1
+	for _ in text:gmatch("\n") do
+		lines = lines + 1
+	end
+	self.exportBox:SetText(text)
+	self.exportBox:SetHeight(math.max(300, lines * 14))
+	self.exportScroll.content:SetHeight(self.exportBox:GetHeight())
+	self.exportBox:SetFocus()
+	self.exportBox:HighlightText()
+	self.exportFrame:Show()
 end
 
 function History:VisibleAwards()
@@ -165,21 +233,19 @@ function History:Refresh()
 			icon = select(5, C_Item.GetItemInfoInstant(award.link))
 		end
 		row.icon:SetIcon(icon)
-		row.icon:SetScript("OnEnter", function(selfIcon)
-			OL.UI:ItemTip(selfIcon, award.link)
-		end)
-		row.name:SetText(award.winner or "")
-		row.time:SetText(date("%H:%M", award.time or entry.session.time))
+		row.name:SetText(OL:ShortName(award.winner or ""))
+		row.time:SetText(date("%d %b %H:%M", award.time or entry.session.time))
 		row.link:SetText(award.link or "")
+		row.linkHit:SetWidth(math.max(1, row.link:GetStringWidth()))
 		row.response:SetText(award.response and OL:ResponseText(award.response) or "")
-		row:SetScript("OnMouseUp", function()
-			self:ShowDetail(award)
+		row.linkHit:SetScript("OnEnter", function(selfHit)
+			OL.UI:ItemTip(selfHit, award.link)
 		end)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 28
+		y = y + 20
 	end
 	for index = #awards + 1, #self.awardRows do
 		self.awardRows[index]:Hide()
@@ -188,120 +254,31 @@ function History:Refresh()
 end
 
 function History:CreateAwardRow(parent)
-	local row = CreateFrame("Frame", nil, parent)
-	row:SetHeight(26)
-	row:EnableMouse(true)
-	row.icon = OL.UI:Icon(row, 22)
-	row.icon:SetPoint("LEFT", 0, 0)
+	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	row:SetHeight(18)
+	row:SetBackdrop({ bgFile = OL.UI.WHITE })
+	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
 	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.name:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-	row.name:SetWidth(90)
+	row.name:SetPoint("LEFT", 4, 0)
+	row.name:SetWidth(150)
 	row.name:SetJustifyH("LEFT")
 	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.time:SetPoint("LEFT", row.name, "RIGHT", 4, 0)
-	row.time:SetWidth(48)
-	row.link = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.link:SetPoint("LEFT", row.time, "RIGHT", 4, 0)
-	row.link:SetWidth(220)
+	row.time:SetPoint("LEFT", row.name, "RIGHT", 8, 0)
+	row.time:SetWidth(100)
+	row.icon = OL.UI:Icon(row, 16)
+	row.icon:SetPoint("LEFT", row.time, "RIGHT", 8, 0)
+	row.icon:EnableMouse(false)
+	row.linkHit = CreateFrame("Button", nil, row)
+	row.linkHit:SetHeight(16)
+	row.linkHit:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+	row.link = row.linkHit:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.link:SetPoint("LEFT")
 	row.link:SetJustifyH("LEFT")
 	row.response = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.response:SetPoint("LEFT", row.link, "RIGHT", 4, 0)
+	row.response:SetPoint("LEFT", row.linkHit, "RIGHT", 8, 0)
 	row.response:SetJustifyH("LEFT")
-	row.icon:SetScript("OnLeave", function()
+	row.linkHit:SetScript("OnLeave", function()
 		OL.UI:HideTip()
 	end)
 	return row
-end
-
-function History:ShowDetail(award)
-	self:EnsureFrame()
-	self.detailAward = award
-	self.detail:Show()
-	self:FillDetail(award)
-end
-
-function History:FillDetail(award)
-	self.detailTitle:SetText((award.winner or "") .. "  " .. (award.link or ""))
-	local cols = {
-		{ key = "name", width = 110 },
-		{ key = "rank", width = 80 },
-		{ key = "officerNote", width = 72 },
-		{ key = "response", width = 72 },
-		{ key = "slotIlvl", width = 40 },
-		{ key = "diff", width = 40 },
-		{ key = "s1", width = 24 },
-		{ key = "s2", width = 24 },
-		{ key = "roll", width = 36 },
-	}
-	local y = 0
-	for index, data in ipairs(award.rows or {}) do
-		local row = self.detailRows[index]
-		if not row then
-			row = CreateFrame("Frame", nil, self.detailScroll.content)
-			row:SetHeight(22)
-			row.cells = {}
-			local x = 0
-			for _, col in ipairs(cols) do
-				local cell = CreateFrame("Frame", nil, row)
-				cell:SetPoint("LEFT", x, 0)
-				cell:SetSize(col.width, 22)
-				cell:EnableMouse(true)
-				if col.key == "s1" or col.key == "s2" then
-					cell.icon = OL.UI:Icon(cell, 18)
-					cell.icon:SetPoint("LEFT")
-				else
-					cell.text = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-					cell.text:SetAllPoints()
-					cell.text:SetJustifyH("LEFT")
-				end
-				row.cells[col.key] = cell
-				x = x + col.width + 4
-			end
-			self.detailRows[index] = row
-		end
-		local winner = data.name == award.winner
-		row.cells.name.text:SetText(winner and ("* " .. data.name) or data.name)
-		row.cells.name.text:SetTextColor(OL.UI:ClassColor(data.class))
-		row.cells.rank.text:SetText(data.rank or "")
-		row.cells.officerNote.text:SetText(data.officerNote or "")
-		row.cells.response.text:SetText(data.response and OL:ResponseText(data.response) or "")
-		row.cells.response:SetScript("OnEnter", function(cell)
-			OL.UI:NoteTip(cell, data.note)
-		end)
-		row.cells.response:SetScript("OnLeave", function()
-			OL.UI:HideTip()
-		end)
-		row.cells.slotIlvl.text:SetText(data.slotIlvl and tostring(data.slotIlvl) or "")
-		row.cells.diff.text:SetText(OL.UI:DiffText(data.diff))
-		local red, green, blue = OL.UI:DiffColor(data.diff)
-		row.cells.diff.text:SetTextColor(red, green, blue)
-		self:Gear(row.cells.s1, data.s1)
-		self:Gear(row.cells.s2, data.s2)
-		row.cells.roll.text:SetText(data.roll and tostring(data.roll) or "")
-		row:ClearAllPoints()
-		row:SetPoint("TOPLEFT", self.detailScroll.content, "TOPLEFT", 0, -y)
-		row:SetPoint("RIGHT", self.detailScroll.content, "RIGHT", 0, 0)
-		row:Show()
-		y = y + 22
-	end
-	for index = #(award.rows or {}) + 1, #self.detailRows do
-		self.detailRows[index]:Hide()
-	end
-	self.detailScroll.content:SetHeight(math.max(1, y))
-end
-
-function History:Gear(cell, link)
-	if link and link ~= "" and C_Item.GetItemInfoInstant(link) then
-		local _, _, _, _, icon = C_Item.GetItemInfoInstant(link)
-		cell.icon:Show()
-		cell.icon:SetIcon(icon)
-		cell.icon:SetScript("OnEnter", function(self)
-			OL.UI:ItemTip(self, link)
-		end)
-		cell.icon:SetScript("OnLeave", function()
-			OL.UI:HideTip()
-		end)
-	else
-		cell.icon:Hide()
-	end
 end

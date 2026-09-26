@@ -15,11 +15,19 @@ The TOC targets interface `120100` (the 12.1 mainline API Forever shares). Forev
 - `/openloot` status
 - `/openloot on` and `/openloot off` for the raid leader
 - `/openloot run` start a session from the raid leader's bags
+- `/openloot trade` show the trades still owed by the loot holder
+- `/openloot v` version check for the group
+- `/openloot dev` temporary demo data. `/openloot dev off` clears it. Remove `Dev.lua` before a real release.
 - `/openloot h` history
-- `/openloot council` list current council
-- `/openloot council rank <n>` council is guild rank index 0 through n
-- `/openloot council chat` council is anyone who can speak in officer chat
 
 ## Raid mode
 
-When a council member who is raid leader enters a raid, OpenLoot asks whether to run for that raid. Accepting turns Pass on Loot on for everyone else and makes the raid leader automatically need on group loot. A player who joins later asks the raid leader and turns Pass on Loot on only if this raid is set to OpenLoot.
+OpenLoot stays idle outside a raid instance. It wakes up only when the zone is a raid. Zoning in, or reloading there, asks the raid leader once whether OpenLoot is on. `/openloot run` rebuilds the council from guild members who are online and can speak in officer chat, then starts the loot session. The runner still needs on loot rolls during the fight.
+
+## Trades
+
+Awarding an item to someone else puts it on the loot holder's trade list. Opening a trade with that winner adds the item to the trade window. `/openloot trade` shows the list again.
+
+## Versions
+
+Clients announce their version in the group. `/openloot v` lists who is current, out of date, or missing the addon. Turning a raid on runs the same check.
