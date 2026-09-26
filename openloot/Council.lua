@@ -9,7 +9,30 @@ function Council:Init()
 	self.byShort = {}
 end
 
-function Council:OfficerChat(rankIndex)
+function Council:RankName(rankIndex, fallback)
+	local order = type(rankIndex) == "number" and (rankIndex + 1) or nil
+	local readers = {
+		C_GuildInfo and C_GuildInfo.GuildControlGetRankName,
+		GuildControlGetRankName,
+	}
+	for _, reader in ipairs(readers) do
+		if order and reader then
+			local ok, name = pcall(reader, order)
+			if ok and type(name) == "string" and name ~= "" then
+				return name
+			end
+		end
+	end
+	return type(fallback) == "string" and fallback or ""
+end
+
+function Council:SeesOfficerChat(rankIndex)
+	if type(rankIndex) ~= "number" then
+		return false
+	end
+	if rankIndex == 0 then
+		return true
+	end
 	if not C_GuildInfo or not C_GuildInfo.GuildControlGetRankFlags then
 		return rankIndex <= 1
 	end
@@ -21,36 +44,6 @@ function Council:OfficerChat(rankIndex)
 		return first[OFFICER_CHAT_SPEAK] and true or false
 	end
 	return fourth and true or false
-end
-
-function Council:Qualifies(rankIndex)
-	if rankIndex == nil then
-		return false
-	end
-	if rankIndex == 0 then
-		return true
-	end
-	return self:OfficerChat(rankIndex)
-end
-
-function Council:RankName(rankIndex, fallback)
-	local order = type(rankIndex) == "number" and (rankIndex + 1) or nil
-	if order and C_GuildInfo and C_GuildInfo.GuildControlGetRankName then
-		local ok, name = pcall(C_GuildInfo.GuildControlGetRankName, order)
-		if ok and type(name) == "string" and name ~= "" then
-			return name
-		end
-	end
-	if order and GuildControlGetRankName then
-		local ok, name = pcall(GuildControlGetRankName, order)
-		if ok and type(name) == "string" and name ~= "" then
-			return name
-		end
-	end
-	if type(fallback) == "string" and fallback ~= "" then
-		return fallback
-	end
-	return ""
 end
 
 function Council:ReadMember(index)
@@ -88,7 +81,7 @@ function Council:ReadMember(index)
 		rankName = self:RankName(rankIndex, rankName),
 		rankIndex = rankIndex,
 		officerNote = officerNote,
-		council = self:Qualifies(rankIndex),
+		council = self:SeesOfficerChat(rankIndex),
 	}
 end
 
@@ -107,7 +100,7 @@ function Council:EnsureSelf()
 		rankName = self:RankName(rankIndex, rankName),
 		rankIndex = rankIndex,
 		officerNote = "",
-		council = self:Qualifies(rankIndex),
+		council = self:SeesOfficerChat(rankIndex),
 	}
 	self:Changed()
 end
@@ -147,7 +140,7 @@ function Council:Rebuild()
 		local member = self:ReadMember(index)
 		if member then
 			local short = OL:ShortName(member.name)
-			if member.council or grouped[short] then
+			if grouped[short] then
 				self.byShort[short] = member
 			end
 		end
@@ -166,59 +159,23 @@ function Council:Info(name)
 	return self.byShort[short]
 end
 
-function Council:IsCouncilName(name)
-	local info = self:Info(name)
-	return info and info.council or false
-end
-
-function Council:HasAssist(unit)
-	if not unit or not UnitExists(unit) then
-		return false
-	end
-	if UnitIsGroupLeader(unit) then
-		return true
-	end
-	if UnitIsGroupAssistant and UnitIsGroupAssistant(unit) then
-		return true
-	end
-	return false
-end
-
 function Council:IsLocalCouncil()
 	if OL.devMode then
-		return self:IsCouncilName(OL:FullName("player"))
+		local info = self:Info(OL:FullName("player"))
+		return info and info.council or false
 	end
-	return self:HasAssist("player")
-end
-
-function Council:Count()
-	if OL.devMode and OL.devCouncil then
-		local count = 0
-		for _, info in pairs(OL.devCouncil) do
-			if info.council then
-				count = count + 1
-			end
-		end
-		return count
+	if not IsInRaid() then
+		return false
 	end
-	if not IsInGroup() then
-		return 0
+	local info = self.byShort[OL:ShortName(OL:FullName("player"))]
+	if info then
+		return info.council and true or false
 	end
-	local count = 0
-	for index = 1, GetNumGroupMembers() do
-		local unit
-		if IsInRaid() then
-			unit = "raid" .. index
-		elseif index == 1 then
-			unit = "player"
-		else
-			unit = "party" .. (index - 1)
-		end
-		if self:HasAssist(unit) then
-			count = count + 1
-		end
+	if not IsInGuild() or not GetGuildInfo then
+		return false
 	end
-	return count
+	local _, _, rankIndex = GetGuildInfo("player")
+	return self:SeesOfficerChat(rankIndex)
 end
 
 function Council:Changed()

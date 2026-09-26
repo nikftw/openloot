@@ -2,7 +2,7 @@
 ## Title: OpenLoot
 ## Notes: Loot council for raid sessions
 ## Author: OpenLoot
-## Version: 0.2.0
+## Version: 0.3.0
 ## SavedVariables: OpenLootDB
 ## AllowLoadGameType: standard, camelot
 ## Category-enUS: Loot

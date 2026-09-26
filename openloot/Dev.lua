@@ -4,15 +4,38 @@ local OL = OpenLoot
 OL.Dev = {}
 local Dev = OL.Dev
 
-local FAKE = {
-	{ name = "Veyra", class = "PALADIN", rank = "Officer", note = "Main" },
-	{ name = "Thorn", class = "HUNTER", rank = "Raider", note = "Clone1" },
-	{ name = "Sable", class = "ROGUE", rank = "Raider", note = "Clone2" },
-	{ name = "Nyx", class = "MAGE", rank = "Officer", note = "Main" },
-	{ name = "Bramble", class = "DRUID", rank = "Raider", note = "Clone1" },
-	{ name = "Quarrel", class = "WARRIOR", rank = "Raider", note = "Clone2" },
-	{ name = "Moss", class = "SHAMAN", rank = "Raider", note = "Main" },
-}
+local FAKE = {}
+local ROSTER = [[
+Veyra PALADIN Officer Main
+Thorn HUNTER Raider Clone1
+Sable ROGUE Raider Clone2
+Nyx MAGE Officer Main
+Bramble DRUID Raider Clone1
+Quarrel WARRIOR Raider Clone2
+Moss SHAMAN Raider Main
+Cinder MAGE Raider Clone3
+Holt WARRIOR Officer Main
+Piper HUNTER Raider Clone1
+Wren DRUID Raider Clone2
+Ash WARLOCK Raider Clone3
+Lark PRIEST Officer Main
+Flint DEATHKNIGHT Raider Clone1
+Ivy MONK Raider Clone2
+Reed EVOKER Raider Clone3
+Gale SHAMAN Raider Main
+Nim ROGUE Raider Clone1
+Ora PALADIN Raider Clone2
+Pell HUNTER Raider Clone3
+Quill MAGE Officer Main
+Rune DEATHKNIGHT Raider Clone1
+Sedge DRUID Raider Clone2
+]]
+for line in ROSTER:gmatch("[^\n]+") do
+	local name, class, rank, note = line:match("^%s*(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s*$")
+	if name then
+		FAKE[#FAKE + 1] = { name = name, class = class, rank = rank, note = note }
+	end
+end
 
 local function link(itemID, name, color)
 	return "|c" .. color .. "|Hitem:" .. itemID .. "::::::::80:::::|h[" .. name .. "]|h|r"
@@ -50,65 +73,101 @@ local function vote(response, slotIlvl, note, s1, s2)
 	}
 end
 
-function Dev:Stop()
-	OL.testSession = false
-	if OL.Session then
-		OL.Session:Clear()
-	end
-	OL:Print("Test session cleared.")
+local function demoKey(key)
+	return type(key) == "string" and (key:sub(1, 5) == "demo:" or key:sub(1, 4) == "dev:")
 end
 
-function Dev:Start()
-	if OL.devMode then
-		self:StopDemo(true)
-	end
-	local items = OL.Items:ScanBags(true)
-	if #items == 0 then
-		OL:Print("No items in your bags.")
-		return
-	end
-	OL.testSession = true
-	OL.Session:Start(items)
-	OL:Print("Test session started from your bags. /openloot dev off clears it.")
+local function demoSession(id)
+	return type(id) == "string" and id:sub(1, 8) == "dev-demo"
 end
 
-function Dev:Slash(rest)
-	local sub = (rest or ""):lower()
-	if sub == "off" then
-		self:Stop()
+function Dev:ScrubSaved()
+	local db = OL.db
+	if not db then
 		return
 	end
-	self:Start()
+	local store = db.history
+	if store and store.order and store.sessions then
+		for index = #store.order, 1, -1 do
+			local id = store.order[index]
+			if demoSession(id) then
+				store.sessions[id] = nil
+				table.remove(store.order, index)
+			end
+		end
+	end
+	if type(db.trades) == "table" then
+		local kept = {}
+		local removed = false
+		for _, entry in ipairs(db.trades) do
+			local key = type(entry) == "table" and entry.key or ""
+			if demoKey(key) then
+				removed = true
+			else
+				kept[#kept + 1] = entry
+			end
+		end
+		if removed then
+			db.trades = kept
+			if OL.Trade then
+				OL.Trade.list = kept
+			end
+		end
+	end
+	if demoSession(type(db.session) == "table" and db.session.id or nil) then
+		db.session = nil
+	end
+end
+
+function Dev:HoldSaves()
+	if self.held or not OL.db then
+		return
+	end
+	self:ScrubSaved()
+	self.held = {
+		history = OL.db.history,
+		trades = OL.db.trades,
+		session = OL.db.session,
+	}
+	OL.db.history = { sessions = {}, order = {} }
+	OL.db.trades = {}
+	OL.db.session = nil
+	if OL.Trade then
+		OL.Trade.list = OL.db.trades
+	end
+end
+
+function Dev:ReleaseSaves()
+	if not self.held or not OL.db then
+		self.held = nil
+		return
+	end
+	OL.db.history = self.held.history
+	OL.db.trades = self.held.trades
+	OL.db.session = self.held.session
+	self.held = nil
+	if OL.Trade then
+		OL.Trade.list = OL.db.trades
+		OL.Trade:SyncListen()
+	end
 end
 
 function Dev:StopDemo(quiet)
 	OL.devMode = false
 	OL.devRoster = nil
 	OL.devCouncil = nil
-	if OL.Session then
+	if self.held and OL.Session then
 		OL.Session:Clear()
 	end
-	if OL.Trade and OL.Trade.list then
-		local kept = {}
-		for _, entry in ipairs(OL.Trade.list) do
-			local key = entry.key or ""
-			local demo = key:sub(1, 4) == "dev:" or key:sub(1, 9) == "dev-demo:"
-			if not demo then
-				kept[#kept + 1] = entry
-			end
-		end
-		OL.Trade.list = kept
-		OL.Trade:Save()
-		OL.Trade:Hide()
+	self:ReleaseSaves()
+	if OL.Session and OL.Session:Restore() then
+		OL.Session:ShowUI()
 	end
-	local store = OL.db and OL.db.history
-	if store then
-		for index = #store.order, 1, -1 do
-			local id = store.order[index]
-			if id and id:sub(1, 8) == "dev-demo" then
-				store.sessions[id] = nil
-				table.remove(store.order, index)
-			end
+	if OL.Trade then
+		if not OL.Trade.list or #OL.Trade.list == 0 then
+			OL.Trade:Hide()
+		elseif OL.Trade.frame and OL.Trade.frame:IsShown() then
+			OL.Trade:Refresh()
 		end
 	end
 	if OL.Versions then
@@ -128,9 +187,12 @@ function Dev:StopDemo(quiet)
 end
 
 function Dev:Demo()
+	if self.held then
+		self:StopDemo(true)
+	end
+	self:HoldSaves()
 	local me = OL:ShortName(OL:FullName("player"))
 	local _, classFile = UnitClass("player")
-	OL.testSession = false
 	OL.devMode = true
 
 	local roster = { { name = me, classFile = classFile } }
@@ -175,7 +237,7 @@ function Dev:Demo()
 		local slot = slots[((index - 1) % #slots) + 1]
 		local color = index % 5 == 0 and rare or epic
 		local ilvl = 610 + (index % 30)
-		local item = piece(itemIDs[((index - 1) % #itemIDs) + 1], "Dev " .. slot[1] .. " " .. index, color, ilvl, slot[2], slot[3], slot[4])
+		local item = piece(itemIDs[((index - 1) % #itemIDs) + 1], "Demo " .. slot[1] .. " " .. index, color, ilvl, slot[2], slot[3], slot[4])
 		local dual = slot[2] == "INVTYPE_FINGER" or slot[2] == "INVTYPE_TRINKET"
 		for personIndex, person in ipairs(roster) do
 			local response = responses[((index + personIndex - 2) % #responses) + 1]
@@ -209,20 +271,12 @@ function Dev:Demo()
 		items = items,
 	}
 
-	local kept = {}
-	OL.Trade.list = OL.Trade.list or {}
-	for _, entry in ipairs(OL.Trade.list) do
-		local key = entry.key or ""
-		if key:sub(1, 4) ~= "dev:" then
-			kept[#kept + 1] = entry
-		end
-	end
-	OL.Trade.list = kept
+	OL.Trade.list = OL.db.trades
 	for index = 1, 8 do
 		local item = items[index * 3]
 		local winner = roster[((index - 1) % #roster) + 1]
 		OL.Trade.list[#OL.Trade.list + 1] = {
-			key = "dev:" .. index,
+			key = "demo:" .. index,
 			link = item.link,
 			texture = item.texture,
 			winner = winner.name,
@@ -250,46 +304,32 @@ function Dev:Demo()
 		end
 		return built
 	end
-	OL.History:Ensure("dev-demo", time())
-	local session = OL.db.history.sessions["dev-demo"]
-	session.awards = {}
-	for index = 1, 20 do
-		local item = items[index]
-		local winner = item.awardedTo or roster[((index - 1) % #roster) + 1].name
-		local cast = item.votes[winner]
-		session.awards[index] = {
-			index = index,
-			winner = winner,
-			link = item.link,
-			response = cast and cast.response or "BIS",
-			time = time() - (index * 60),
-			rows = awardRows(item),
-		}
-	end
-	OL.History:Ensure("dev-demo-2", time() - 86400)
-	local older = OL.db.history.sessions["dev-demo-2"]
-	older.awards = {}
-	for index = 21, 24 do
-		local item = items[index]
-		local winner = roster[((index - 1) % #roster) + 1].name
-		older.awards[#older.awards + 1] = {
-			index = index,
-			winner = winner,
-			link = item.link,
-			response = "UPGRADE",
-			time = time() - 86400 - (index * 60),
-			rows = awardRows(item),
-		}
+	for sessionIndex = 16, 1, -1 do
+		local id = sessionIndex == 1 and "dev-demo" or ("dev-demo-" .. sessionIndex)
+		local when = time() - ((sessionIndex - 1) * 86400)
+		OL.History:Ensure(id, when)
+		local session = OL.db.history.sessions[id]
+		session.awards = {}
+		for awardIndex = 1, 24 do
+			local item = items[((sessionIndex * 3 + awardIndex - 1) % #items) + 1]
+			local winner = roster[((awardIndex + sessionIndex) % #roster) + 1].name
+			local cast = item.votes[winner]
+			session.awards[awardIndex] = {
+				index = awardIndex,
+				winner = winner,
+				link = item.link,
+				response = cast and cast.response or responses[((awardIndex + sessionIndex) % #responses) + 1],
+				time = when - (awardIndex * 90),
+				rows = awardRows(item),
+			}
+		end
 	end
 
+	local versions = { OL:Version(), "0.1.0", "0.2.0", "0.3.0", nil }
 	OL.Versions.known[me] = OL:Version()
-	OL.Versions.known.Veyra = OL:Version()
-	OL.Versions.known.Thorn = "0.1.0"
-	OL.Versions.known.Nyx = "0.3.0"
-	OL.Versions.known.Bramble = "0.1.0"
-	OL.Versions.known.Moss = OL:Version()
-	OL.Versions.known.Sable = nil
-	OL.Versions.known.Quarrel = nil
+	for index, person in ipairs(FAKE) do
+		OL.Versions.known[person.name] = versions[((index - 1) % #versions) + 1]
+	end
 	OL.Versions.waiting = false
 
 	OL.RaiderFrame:Show()
@@ -308,6 +348,12 @@ function Dev:Demo()
 
 	OL:Print("Demo on. Sample screens are local only. /openloot demo off to clear.")
 end
+
+local logout = CreateFrame("Frame")
+logout:RegisterEvent("PLAYER_LOGOUT")
+logout:SetScript("OnEvent", function()
+	Dev:ReleaseSaves()
+end)
 
 function Dev:DemoSlash(rest)
 	local sub = (rest or ""):lower()

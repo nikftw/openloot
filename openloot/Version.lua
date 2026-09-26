@@ -113,9 +113,36 @@ function Versions:Ensure()
 	end
 	local frame = OL.UI:CreateWindow("OpenLoot Versions", 272, 30)
 	self.frame = frame
-	self.scroll = OL.UI:CreateScroll(frame.content)
-	self.scroll:SetPoint("TOPLEFT", 0, 0)
-	self.scroll:SetPoint("BOTTOMRIGHT", 0, 0)
+	OL:WatchWindow(frame, "versions")
+	local clip = CreateFrame("Frame", nil, frame.content)
+	clip:SetClipsChildren(true)
+	clip:SetPoint("TOPLEFT", 0, 0)
+	clip:SetPoint("BOTTOMRIGHT", 0, 0)
+	local content = CreateFrame("Frame", nil, clip)
+	content:SetPoint("TOPLEFT", clip, "TOPLEFT", 0, 0)
+	content:SetPoint("TOPRIGHT", clip, "TOPRIGHT", 0, 0)
+	content:SetHeight(1)
+	clip.content = content
+	clip.offset = 0
+	clip:EnableMouseWheel(true)
+	clip:SetScript("OnMouseWheel", function(selfClip, delta)
+		local rowH = OL.UI:P(24)
+		local maxOffset = (content:GetHeight() or 0) - (selfClip:GetHeight() or 0)
+		if maxOffset < 0 then
+			maxOffset = 0
+		end
+		local nextOffset = OL.UI:Snap((selfClip.offset or 0) - delta * rowH)
+		if nextOffset < 0 then
+			nextOffset = 0
+		elseif nextOffset > maxOffset then
+			nextOffset = OL.UI:Snap(maxOffset)
+		end
+		selfClip.offset = nextOffset
+		content:ClearAllPoints()
+		content:SetPoint("TOPLEFT", selfClip, "TOPLEFT", 0, nextOffset)
+		content:SetPoint("TOPRIGHT", selfClip, "TOPRIGHT", 0, nextOffset)
+	end)
+	self.scroll = clip
 end
 
 function Versions:WhisperOne(member)
@@ -161,8 +188,30 @@ function Versions:Refresh()
 	if not self.frame or not self.frame:IsShown() then
 		return
 	end
-	local roster = OL.Session:Roster()
-	local y = 0
+	local roster = {}
+	for _, member in ipairs(OL.Session:Roster()) do
+		roster[#roster + 1] = member
+	end
+	local function rank(version)
+		if not version then
+			return self.waiting and 3 or 1
+		end
+		if OL:CompareVersion(version, OL:Version()) < 0 then
+			return 2
+		end
+		return 3
+	end
+	table.sort(roster, function(left, right)
+		local leftName = OL:ShortName(left.name)
+		local rightName = OL:ShortName(right.name)
+		local leftRank = rank(self.known[leftName])
+		local rightRank = rank(self.known[rightName])
+		if leftRank ~= rightRank then
+			return leftRank < rightRank
+		end
+		return leftName:lower() < rightName:lower()
+	end)
+	local rowH = OL.UI:P(24)
 	for index, member in ipairs(roster) do
 		local row = self.rows[index]
 		if not row then
@@ -174,7 +223,7 @@ function Versions:Refresh()
 		local text, red, green, blue = self:Status(known)
 		local mine = OL:ShortName(OL:FullName("player"))
 		local behind = short ~= mine and ((not known and not self.waiting) or (known and OL:CompareVersion(known, OL:Version()) < 0))
-		row.name:SetText(OL:ShortName(short))
+		row.name:SetText(short)
 		row.name:SetTextColor(OL.UI:ClassColor(member.classFile))
 		row.version:SetText(text)
 		row.version:SetTextColor(red, green, blue)
@@ -182,36 +231,48 @@ function Versions:Refresh()
 		row.whisper:SetScript("OnClick", function()
 			self:WhisperOne(member)
 		end)
+		local y = OL.UI:Snap((index - 1) * rowH)
+		local buttonH = OL.UI:P(16)
+		local inset = OL.UI:Snap((rowH - buttonH) / 2)
+		row:SetHeight(rowH)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
-		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
+		row:SetPoint("TOPRIGHT", self.scroll.content, "TOPRIGHT", 0, -y)
+		row.version:ClearAllPoints()
+		row.version:SetPoint("RIGHT", row, "RIGHT", -OL.UI:P(4), 0)
+		row.whisper:SetSize(OL.UI:P(64), buttonH)
+		row.whisper:ClearAllPoints()
+		local textW = OL.UI:Snap(row.version:GetStringWidth() or 0)
+		row.whisper:SetPoint("TOPRIGHT", row, "TOPRIGHT", -(OL.UI:P(4) + textW + OL.UI:P(4)), -inset)
 		row:Show()
-		y = y + 24
 	end
 	for index = #roster + 1, #self.rows do
 		self.rows[index]:Hide()
 	end
-	self.scroll.content:SetHeight(math.max(1, y))
-	if not self.frame.collapsed and not self.frame.userSized then
-		local visible = math.min(math.max(#roster, 1), 12)
-		local height = 30 + visible * 24
+	self.scroll.content:SetHeight(math.max(1, OL.UI:Snap(#roster * rowH)))
+	if not self.frame.collapsed and not self.frame.gripSized then
+		local count = math.max(#roster, 1)
+		local shown = count > 8 and 8.5 or count
+		local height = OL.UI:FitHeight(OL.UI:Snap(rowH * shown))
 		self.frame:SetHeight(height)
 		self.frame.expandedHeight = height
+		self.frame:SetWidth(272)
 	end
 end
 
 function Versions:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent)
-	row:SetHeight(24)
+	row:SetHeight(OL.UI:P(24))
+	row.version = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.version:SetJustifyH("RIGHT")
+	row.version:SetWordWrap(false)
+	row.whisper = OL.UI:FlatButton(row, "Whisper", 64, 16)
+	row.whisper:Hide()
 	row.name = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
 	row.name:SetPoint("LEFT", 4, 0)
+	row.name:SetPoint("RIGHT", row.whisper, "LEFT", -4, 0)
 	row.name:SetJustifyH("LEFT")
-	row.version = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
-	row.version:SetPoint("RIGHT", -4, 0)
-	row.version:SetJustifyH("RIGHT")
-	row.whisper = OL.UI:FlatButton(row, "Whisper", 64, 16)
-	row.whisper:SetPoint("RIGHT", row.version, "LEFT", -4, 0)
-	row.whisper:Hide()
+	row.name:SetWordWrap(false)
 	return row
 end
 

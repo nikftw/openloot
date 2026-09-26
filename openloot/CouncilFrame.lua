@@ -3,6 +3,32 @@ local OL = OpenLoot
 OL.CouncilFrame = {}
 local Frame = OL.CouncilFrame
 
+local RESPONSE_ORDER = {
+	BIS = 1,
+	UPGRADE = 2,
+	OFFSPEC = 3,
+}
+
+local function noteOrder(note)
+	local text = tostring(note or ""):lower():match("^%s*(.-)%s*$") or ""
+	if text == "main" then
+		return 0
+	end
+	local clone = text:match("^clone%s*(%d+)$")
+	if clone then
+		return tonumber(clone)
+	end
+	return 1000
+end
+
+local function voteRank(member, item)
+	local short = OL:ShortName(member.name)
+	local vote = item.votes and item.votes[short]
+	local response = vote and vote.response or nil
+	local info = OL.Council:Info(member.name)
+	return response == "PASS", noteOrder(info and info.officerNote or ""), RESPONSE_ORDER[response] or 4, short:lower()
+end
+
 local COLS = {
 	{ key = "name", label = "Name", width = 150 },
 	{ key = "rank", label = "Rank", width = 108 },
@@ -16,17 +42,40 @@ local COLS = {
 	{ key = "votes", label = "Votes", width = 44 },
 }
 
+local function walkCols(apply)
+	local x = 0
+	local gap = OL.UI:P(4)
+	for _, col in ipairs(COLS) do
+		local width = OL.UI:P(col.width)
+		apply(col, gap + x, width)
+		x = x + width + gap
+	end
+end
+
 function Frame:Ensure()
 	if self.frame then
 		return
 	end
 	local frame = OL.UI:CreateWindow("OpenLoot Council", 790, 430)
+	if not frame.gripSized then
+		local height = OL.UI:Snap(OL.UI:P(430) - 7 * OL.UI:Pixel())
+		frame:SetHeight(height)
+		frame.expandedHeight = height
+	end
 	frame.CloseAction = function()
 		if UnitIsGroupLeader("player") and OL.Session and OL.Session:IsActive() then
 			OL.Session:End()
 		end
 	end
+	local edge = OL.UI:Pixel()
+	local side = OL.UI:P(4)
+	local inner = side - edge
+	if inner < edge then
+		inner = edge
+	end
+	frame.content:SetPoint("BOTTOMRIGHT", -side, inner + edge)
 	self.frame = frame
+	OL:WatchWindow(frame, "council")
 	self.selected = 1
 	self.icons = {}
 	self.rows = {}
@@ -46,32 +95,30 @@ function Frame:Ensure()
 	self.skip = OL.UI:FlatButton(self.main, "Skip", 52, 18)
 	self.skip:SetPoint("TOPRIGHT", self.disenchant, "TOPLEFT", -4, 0)
 	self.itemText = OL.UI:Text(self.main, "OVERLAY", "GameFontHighlight")
-	self.itemText:SetPoint("TOPLEFT", 0, 0)
+	self.itemText:SetPoint("TOPLEFT", 2 * OL.UI:Pixel(), 0)
 	self.itemText:SetPoint("TOPRIGHT", self.skip, "TOPLEFT", -4, 0)
 	self.itemText:SetJustifyH("LEFT")
 	self.itemText:SetWordWrap(false)
 	self.itemIlvl = OL.UI:Text(self.main, "OVERLAY", "GameFontHighlightSmall")
-	self.itemIlvl:SetPoint("TOPLEFT", 0, -22)
+	self.itemIlvl:SetPoint("TOPLEFT", 2 * OL.UI:Pixel(), -22)
 	self.itemIlvl:SetPoint("TOPRIGHT", 0, -22)
 	self.itemIlvl:SetJustifyH("LEFT")
 	self.itemIlvl:SetWordWrap(false)
 
 	self.header = CreateFrame("Frame", nil, self.main)
-	self.header:SetPoint("TOPLEFT", 0, -38)
-	self.header:SetPoint("TOPRIGHT", 0, -38)
-	self.header:SetHeight(16)
-	local x = 0
-	for _, col in ipairs(COLS) do
+	self.header:SetPoint("TOPLEFT", 0, -OL.UI:P(38))
+	self.header:SetPoint("TOPRIGHT", 0, -OL.UI:P(38))
+	self.header:SetHeight(OL.UI:P(16))
+	walkCols(function(col, left, width)
 		local label = OL.UI:Text(self.header, "OVERLAY", "GameFontDisableSmall")
-		label:SetPoint("LEFT", self.header, "LEFT", 4 + x, 0)
-		label:SetWidth(col.width)
+		label:SetPoint("LEFT", self.header, "LEFT", left, 0)
+		label:SetWidth(width)
 		label:SetJustifyH("LEFT")
 		label:SetText(col.label)
-		x = x + col.width + 4
-	end
+	end)
 
 	local scroll = OL.UI:CreateScroll(self.main)
-	scroll:SetPoint("TOPLEFT", 0, -58)
+	scroll:SetPoint("TOPLEFT", 0, -OL.UI:P(58))
 	scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	local wheel = scroll:GetScript("OnMouseWheel")
 	scroll:SetScript("OnMouseWheel", function(selfScroll, delta)
@@ -155,7 +202,10 @@ function Frame:Refresh()
 		self.selected = 1
 	end
 	local cols = math.max(1, math.ceil(math.max(count, 1) / 10))
-	local iconWidth = (cols - 1) * 40 + 36
+	local iconSize = OL.UI:P(36)
+	local colStep = OL.UI:P(40)
+	local rowStep = OL.UI:Snap(iconSize + 3 * OL.UI:Pixel())
+	local iconWidth = (cols - 1) * colStep + iconSize
 	self.iconPane:SetWidth(iconWidth)
 	if not self.frame.collapsed then
 		local want = iconWidth + 788
@@ -175,7 +225,7 @@ function Frame:Refresh()
 		local col = math.floor((index - 1) / 10)
 		local row = (index - 1) % 10
 		button:ClearAllPoints()
-		button:SetPoint("TOPLEFT", self.iconPane, "TOPLEFT", col * 40, -row * 40)
+		button:SetPoint("TOPLEFT", self.iconPane, "TOPLEFT", col * colStep, -row * rowStep)
 		button:SetIcon(item.texture)
 		local responded = 0
 		local roster = OL.Session:Roster()
@@ -227,14 +277,18 @@ function Frame:Refresh()
 			OL.Session:Close(self.selected, "disenchant")
 		end)
 	end
+	local namePad = 2 * OL.UI:Pixel()
 	self.itemText:ClearAllPoints()
-	self.itemText:SetPoint("LEFT", self.main, "TOPLEFT", 0, -9)
+	self.itemText:SetPoint("LEFT", self.main, "TOPLEFT", namePad, -9)
 	if open then
 		self.itemText:SetPoint("RIGHT", self.skip, "LEFT", -4, 0)
 	else
 		self.itemText:SetPoint("RIGHT", self.main, "TOPRIGHT", 0, -9)
 	end
 	self.itemText:SetText(item and item.link or "No items")
+	self.itemIlvl:ClearAllPoints()
+	self.itemIlvl:SetPoint("TOPLEFT", namePad, -22)
+	self.itemIlvl:SetPoint("TOPRIGHT", 0, -22)
 	self.itemIlvl:SetText(item and OL.Items:RowMeta(item) or "")
 	self:FillRoster(item)
 end
@@ -284,6 +338,22 @@ end
 
 function Frame:FillRoster(item)
 	local roster = item and OL.Session:Roster() or {}
+	if item then
+		table.sort(roster, function(a, b)
+			local aPass, aGroup, aRank, aName = voteRank(a, item)
+			local bPass, bGroup, bRank, bName = voteRank(b, item)
+			if aPass ~= bPass then
+				return not aPass
+			end
+			if aGroup ~= bGroup then
+				return aGroup < bGroup
+			end
+			if aRank ~= bRank then
+				return aRank < bRank
+			end
+			return aName < bName
+		end)
+	end
 	local y = 0
 	for rowIndex, member in ipairs(roster) do
 		local row = self.rows[rowIndex]
@@ -316,18 +386,13 @@ function Frame:FillRoster(item)
 			OL.Session:CastBallot(self.selected, short)
 		end)
 		row.actions.award:SetScript("OnClick", function()
-			OL.UI:Prompt("OpenLoot", "Award " .. item.link .. " to " .. short .. "?", {
-				{ text = "Award", onClick = function()
-					OL.Session:Award(self.selected, short)
-				end },
-				{ text = "Cancel" },
-			})
+			OL.Session:Award(self.selected, short)
 		end)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 26
+		y = y + OL.UI:P(26)
 	end
 	for rowIndex = #roster + 1, #self.rows do
 		self:ClearRowHover(self.rows[rowIndex])
@@ -338,18 +403,17 @@ end
 
 function Frame:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(26)
+	row:SetHeight(OL.UI:P(26))
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
 	row:EnableMouse(true)
 	row.cells = {}
-	local x = 0
-	for _, col in ipairs(COLS) do
+	walkCols(function(col, left, width)
 		local cell = CreateFrame("Frame", nil, row)
-		cell:SetPoint("LEFT", row, "LEFT", 4 + x, 0)
-		cell:SetSize(col.width, 26)
+		cell:SetPoint("LEFT", row, "LEFT", left, 0)
+		cell:SetSize(width, OL.UI:P(26))
 		cell:SetClipsChildren(true)
-		cell:EnableMouse(col.key == "response" or col.key == "playerNote")
+		cell:EnableMouse(col.key == "playerNote")
 		if col.key == "playerNote" then
 			cell.icon = cell:CreateTexture(nil, "ARTWORK")
 			cell.icon:SetSize(10, 12)
@@ -365,8 +429,7 @@ function Frame:CreateRow(parent)
 			cell.text:SetJustifyH("LEFT")
 		end
 		row.cells[col.key] = cell
-		x = x + col.width + 4
-	end
+	end)
 	row.actions = CreateFrame("Frame", nil, row)
 	row.actions:SetSize(118, 18)
 	row.actions:SetPoint("RIGHT", -4, 0)

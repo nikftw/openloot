@@ -39,6 +39,23 @@ function OL:Print(message)
 	print("|cff6cb6ffOpenLoot|r: " .. tostring(message))
 end
 
+function OL:RememberWindow(name, shown)
+	if not self.db then
+		return
+	end
+	self.db.windows = self.db.windows or {}
+	self.db.windows[name] = shown and true or false
+end
+
+function OL:WatchWindow(frame, name)
+	frame:HookScript("OnShow", function()
+		OL:RememberWindow(name, true)
+	end)
+	frame:HookScript("OnHide", function()
+		OL:RememberWindow(name, false)
+	end)
+end
+
 function OL:ShortName(name)
 	if not name or name == "" then
 		return ""
@@ -65,7 +82,7 @@ function OL:Version()
 	elseif GetAddOnMetadata then
 		version = GetAddOnMetadata(ADDON, "Version")
 	end
-	return version or "0.2.0"
+	return version or "0.3.0"
 end
 
 function OL:CompareVersion(left, right)
@@ -161,11 +178,14 @@ function OL:Sleep()
 	self:Listen("START_LOOT_ROLL", false)
 end
 
-function OL:SyncPresence(isReload)
+function OL:SyncPresence(isReload, askSession)
 	if self:IsLive() then
 		self:Wake(isReload)
 	else
 		self:Sleep()
+		if self.Session and IsInGroup() then
+			self.Session:CatchUp(askSession and true or false)
+		end
 	end
 end
 
@@ -174,27 +194,10 @@ function OL:InitDB()
 	self.db = OpenLootDB
 end
 
-local function statusText()
-	local raid = OL.db.activeRaid
-	local mode = "off"
-	if raid and raid.on then
-		mode = raid.isRunner and "on (you are the runner)" or "on"
-	end
-	local count = OL.Council and OL.Council:Count() or 0
-	local items = OL.Session and OL.Session:ItemCount() or 0
-	OL:Print(string.format("Version %s. Raid mode %s. Council members: %d. Session items: %d.", OL:Version(), mode, count, items))
-end
-
 function OL:Slash(message)
 	local cmd, rest = message:match("^(%S*)%s*(.-)$")
 	cmd = (cmd or ""):lower()
-	if cmd == "" then
-		statusText()
-	elseif cmd == "on" then
-		self.RaidMode:EnableFromSlash()
-	elseif cmd == "off" then
-		self.RaidMode:DisableFromSlash()
-	elseif cmd == "run" then
+	if cmd == "run" then
 		self.Session:Run()
 	elseif cmd == "h" or cmd == "history" then
 		self.History:Toggle()
@@ -202,12 +205,12 @@ function OL:Slash(message)
 		self.Trade:Show()
 	elseif cmd == "v" or cmd == "version" then
 		self.Versions:Toggle()
-	elseif cmd == "dev" then
-		self.Dev:Slash(rest)
 	elseif cmd == "demo" then
 		self.Dev:DemoSlash(rest)
+	elseif cmd == "resize" then
+		self.UI:ToggleResize()
 	else
-		self:Print("Commands: on, off, run, trade, v, h, dev, demo")
+		self:Print("Commands: run, trade, v, h, resize, demo")
 	end
 end
 
@@ -218,6 +221,9 @@ function handlers.ADDON_LOADED(name)
 		return
 	end
 	OL:InitDB()
+	if OL.Dev and OL.Dev.ScrubSaved then
+		OL.Dev:ScrubSaved()
+	end
 	OL.Comms:Init()
 	OL.Council:Init()
 	OL.RaidMode:Init()
@@ -233,13 +239,13 @@ function handlers.PLAYER_ENTERING_WORLD(isLogin, isReload)
 	if not OL.ready or not (isLogin or isReload) then
 		return
 	end
-	OL:SyncPresence(isReload and true or false)
+	OL:SyncPresence(isReload and true or false, true)
 	OL:Listen("PLAYER_ENTERING_WORLD", false)
 end
 
 function handlers.ZONE_CHANGED_NEW_AREA()
 	if OL.ready then
-		OL:SyncPresence(false)
+		OL:SyncPresence(false, false)
 	end
 end
 
@@ -282,6 +288,7 @@ events:SetScript("OnEvent", function(_, eventName, ...)
 end)
 
 SLASH_OPENLOOT1 = "/openloot"
+SLASH_OPENLOOT2 = "/ol"
 SlashCmdList.OPENLOOT = function(message)
 	OL:Slash(message or "")
 end

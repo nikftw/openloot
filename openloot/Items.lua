@@ -127,27 +127,31 @@ function Items:TypeLabel(classID, subClassID)
 	if classID == nil or subClassID == nil then
 		return ""
 	end
-	if C_Item and C_Item.GetItemSubClassInfo then
-		local ok, name = pcall(C_Item.GetItemSubClassInfo, classID, subClassID)
-		if ok and type(name) == "string" and name ~= "" then
-			return name
-		end
-	end
-	if GetItemSubClassInfo then
-		local ok, name = pcall(GetItemSubClassInfo, classID, subClassID)
-		if ok and type(name) == "string" and name ~= "" then
-			return name
+	local readers = { C_Item and C_Item.GetItemSubClassInfo, GetItemSubClassInfo }
+	for _, reader in ipairs(readers) do
+		if reader then
+			local ok, name = pcall(reader, classID, subClassID)
+			if ok and type(name) == "string" and name ~= "" then
+				return name
+			end
 		end
 	end
 	return ""
 end
 
+local function trim(text)
+	if not text or text == "" then
+		return ""
+	end
+	return (text:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 function Items:RowMeta(item)
 	local parts = {}
 	if item.ilvl and item.ilvl > 0 then
-		parts[#parts + 1] = tostring(item.ilvl)
+		parts[#parts + 1] = trim(tostring(item.ilvl))
 	end
-	local typeName = self:TypeLabel(item.classID, item.subClassID)
+	local typeName = trim(self:TypeLabel(item.classID, item.subClassID))
 	local armorClass = Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4
 	local misc = item.classID == armorClass and item.subClassID == 0
 	if not misc and typeName ~= "" then
@@ -156,11 +160,11 @@ function Items:RowMeta(item)
 			parts[#parts + 1] = typeName
 		end
 	end
-	local slotName = self:SlotLabel(item.equipLoc)
+	local slotName = trim(self:SlotLabel(item.equipLoc))
 	if slotName ~= "" then
 		parts[#parts + 1] = slotName
 	end
-	return table.concat(parts, " · ")
+	return table.concat(parts, "· ")
 end
 
 function Items:PlayerCanUse(link, equipLoc, classID, subClassID)

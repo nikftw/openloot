@@ -37,8 +37,25 @@ local function join(parts)
 	return table.concat(parts, SEP)
 end
 
+local function me()
+	return OL:ShortName(OL:FullName("player"))
+end
+
+local function repaint()
+	OL.RaiderFrame:Refresh()
+	OL.CouncilFrame:Refresh()
+end
+
+local function itemLine(id, index, item, test)
+	return join({
+		"item", id, index, field(item.ilvl), item.equipLoc or "", field(item.texture),
+		field(item.classID), field(item.subClassID), item.link or "", test or "",
+	})
+end
+
 function Session:Init()
 	self.active = nil
+	self:Restore()
 end
 
 function Session:IsActive()
@@ -46,14 +63,7 @@ function Session:IsActive()
 end
 
 function Session:IsHolder()
-	return self.active and OL:ShortName(self.active.owner or "") == OL:ShortName(OL:FullName("player"))
-end
-
-function Session:ItemCount()
-	if not self.active then
-		return 0
-	end
-	return #self.active.items
+	return self.active and OL:ShortName(self.active.owner or "") == me()
 end
 
 function Session:Roster()
@@ -96,15 +106,39 @@ function Session:HasEnded(id)
 	return self.ended and self.ended[id] and true or false
 end
 
+function Session:Bind()
+	if self.active then
+		OL.db.session = self.active
+	end
+end
+
+function Session:OpenSessionWindows()
+	OL.db.windows = OL.db.windows or {}
+	OL.db.windows.raider = true
+	OL.db.windows.council = true
+end
+
+function Session:WindowOpen(name)
+	local windows = OL.db.windows
+	if not windows or windows[name] == nil then
+		return true
+	end
+	return windows[name] and true or false
+end
+
 function Session:ShowUI()
 	if self.active and self:HasEnded(self.active.id) then
 		self:Clear()
 		return
 	end
-	OL.RaiderFrame:Show()
-	if OL.Council:IsLocalCouncil() then
+	if self:WindowOpen("raider") then
+		OL.RaiderFrame:Show()
+	elseif OL.RaiderFrame and OL.RaiderFrame.frame then
+		OL.RaiderFrame:Hide()
+	end
+	if OL.Council:IsLocalCouncil() and self:WindowOpen("council") then
 		OL.CouncilFrame:Show()
-	elseif OL.CouncilFrame then
+	elseif OL.CouncilFrame and OL.CouncilFrame.frame then
 		OL.CouncilFrame:Hide()
 	end
 	OL.RaiderFrame:Refresh()
@@ -126,6 +160,11 @@ function Session:Clear()
 		self:RememberEnd(self.active.id)
 	end
 	self.active = nil
+	self.announced = nil
+	self.announceAt = nil
+	if OL.db then
+		OL.db.session = nil
+	end
 	if OL.RaiderFrame then
 		OL.RaiderFrame:Hide()
 	end
@@ -136,15 +175,18 @@ end
 
 function Session:Start(items)
 	local id = OL:ShortName(OL:FullName("player")) .. "-" .. tostring(time())
+	for _, item in ipairs(items) do
+		item.votes = item.votes or {}
+		item.ballots = item.ballots or {}
+	end
 	self.active = { id = id, items = items, owner = OL:FullName("player") }
+	self:Bind()
+	self:OpenSessionWindows()
 	OL.History:Ensure(id, time())
-	local test = OL.testSession and "1" or ""
+	local test = ""
 	OL.Comms:Send(join({ "begin", id, #items, test }))
 	for index, item in ipairs(items) do
-		OL.Comms:Send(join({
-			"item", id, index, field(item.ilvl), item.equipLoc or "", field(item.texture),
-			field(item.classID), field(item.subClassID), item.link, test,
-		}))
+		OL.Comms:Send(itemLine(id, index, item, test))
 	end
 	OL.Comms:Send(join({ "vend", id, test }))
 	self:ShowUI()
@@ -192,13 +234,13 @@ function Session:SetResponse(index, responseId, note)
 	responseId = responseId or item.myResponse
 	if not responseId then
 		item.myNote = note
-		OL.RaiderFrame:Refresh()
+		repaint()
 		return
 	end
 	local slotIlvl, diff, first, second = OL.Items:Compare(item.link, item.ilvl, item.equipLoc)
 	item.myResponse = responseId
 	item.myNote = note
-	local name = OL:ShortName(OL:FullName("player"))
+	local name = me()
 	item.votes[name] = {
 		response = responseId,
 		note = note,
@@ -210,8 +252,7 @@ function Session:SetResponse(index, responseId, note)
 	OL.Comms:Send(join({
 		"vote", self.active.id, index, responseId, field(slotIlvl), field(diff), note, field(first), field(second),
 	}))
-	OL.RaiderFrame:Refresh()
-	OL.CouncilFrame:Refresh()
+	repaint()
 end
 
 function Session:ClearResponse(index)
@@ -220,13 +261,12 @@ function Session:ClearResponse(index)
 		return
 	end
 	item.myResponse = nil
-	local name = OL:ShortName(OL:FullName("player"))
+	local name = me()
 	item.votes[name] = nil
 	OL.Comms:Send(join({
 		"vote", self.active.id, index, "", "", "", item.myNote or "", "", "",
 	}))
-	OL.RaiderFrame:Refresh()
-	OL.CouncilFrame:Refresh()
+	repaint()
 end
 
 function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, first, second)
@@ -240,11 +280,10 @@ function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, fi
 	local name = OL:ShortName(sender)
 	if not response or response == "" then
 		item.votes[name] = nil
-		if name == OL:ShortName(OL:FullName("player")) then
+		if name == me() then
 			item.myResponse = nil
-			OL.RaiderFrame:Refresh()
 		end
-		OL.CouncilFrame:Refresh()
+		repaint()
 		return
 	end
 	item.votes[name] = {
@@ -255,7 +294,11 @@ function Session:ApplyVote(id, index, sender, response, slotIlvl, diff, note, fi
 		s1 = first,
 		s2 = second,
 	}
-	OL.CouncilFrame:Refresh()
+	if name == me() then
+		item.myResponse = response
+		item.myNote = note
+	end
+	repaint()
 end
 
 function Session:CastBallot(index, candidate)
@@ -264,7 +307,7 @@ function Session:CastBallot(index, candidate)
 		return
 	end
 	item.ballots = item.ballots or {}
-	local mine = OL:ShortName(OL:FullName("player"))
+	local mine = me()
 	local choice = OL:ShortName(candidate)
 	if item.ballots[mine] == choice then
 		item.ballots[mine] = nil
@@ -314,7 +357,7 @@ function Session:Award(index, winner)
 	OL.Comms:Send(join({ "award", self.active.id, index, shortWinner, item.link, award.response, award.time }))
 	local channel = IsInRaid() and "RAID" or "PARTY"
 	pcall(SendChatMessage, OL:ShortName(shortWinner) .. " was awarded " .. item.link, channel)
-	OL.RaiderFrame:Refresh()
+	repaint()
 	OL.CouncilFrame:AdvanceFrom(index)
 end
 
@@ -336,8 +379,199 @@ function Session:Close(index, reason)
 		time = time(),
 	})
 	OL.Comms:Send(join({ "close", self.active.id, index, reason }))
-	OL.RaiderFrame:Refresh()
+	repaint()
 	OL.CouncilFrame:AdvanceFrom(index)
+end
+
+function Session:StoreItem(index, incoming)
+	local prev = self.active.items[index]
+	if prev and prev.link == incoming.link then
+		incoming.votes = prev.votes or {}
+		incoming.ballots = prev.ballots or {}
+		incoming.myResponse = prev.myResponse
+		incoming.myNote = prev.myNote
+		incoming.awardedTo = prev.awardedTo
+		incoming.closed = prev.closed
+		incoming.bag = prev.bag
+		incoming.slot = prev.slot
+		incoming.guid = prev.guid
+	else
+		incoming.votes = incoming.votes or {}
+		incoming.ballots = incoming.ballots or {}
+	end
+	self.active.items[index] = incoming
+end
+
+function Session:Broadcast()
+	local session = self.active
+	if not session then
+		return
+	end
+	local test = ""
+	OL.Comms:Send(join({ "begin", session.id, #session.items, test }))
+	for index, item in ipairs(session.items) do
+		OL.Comms:Send(itemLine(session.id, index, item, test))
+		for voter, vote in pairs(item.votes or {}) do
+			OL.Comms:Send(join({
+				"keep", session.id, index, voter,
+				vote.response or "", field(vote.slotIlvl), field(vote.diff), vote.note or "",
+				field(vote.s1), field(vote.s2),
+			}))
+		end
+		for voter, choice in pairs(item.ballots or {}) do
+			OL.Comms:Send(join({ "kept", session.id, index, voter, choice or "" }))
+		end
+		if item.awardedTo or item.closed then
+			local response = ""
+			if item.awardedTo and item.votes then
+				local vote = item.votes[OL:ShortName(item.awardedTo)]
+				response = vote and vote.response or ""
+			end
+			OL.Comms:Send(join({ "mark", session.id, index, item.awardedTo or "", item.closed or "", response }))
+		end
+	end
+	OL.Comms:Send(join({ "vend", session.id, test }))
+end
+
+function Session:Announce()
+	if not UnitIsGroupLeader("player") or not IsInGroup() then
+		return
+	end
+	if not self:IsActive() then
+		self:Restore()
+	end
+	local token = self:IsActive() and self.active.id or ""
+	local now = GetTime()
+	if self.announceAt and self.announced == token and (now - self.announceAt) < 1 then
+		return
+	end
+	self.announced = token
+	self.announceAt = now
+	if token == "" then
+		OL.Comms:Send("sync")
+		return
+	end
+	self:Broadcast()
+end
+
+function Session:Restore()
+	if self:IsActive() then
+		return false
+	end
+	local saved = OL.db and OL.db.session
+	if type(saved) ~= "table" or not saved.id or type(saved.items) ~= "table" then
+		return false
+	end
+	if self:HasEnded(saved.id) then
+		OL.db.session = nil
+		return false
+	end
+	self.active = saved
+	for _, item in ipairs(saved.items) do
+		item.votes = item.votes or {}
+		item.ballots = item.ballots or {}
+	end
+	return true
+end
+
+function Session:RestoreWindows()
+	local windows = OL.db.windows
+	if not windows then
+		return
+	end
+	if windows.history and OL.History then
+		OL.History:EnsureFrame()
+		OL.History.frame:Show()
+		OL.History:Refresh()
+	end
+	if windows.versions and OL.Versions then
+		OL.Versions:Ensure()
+		OL.Versions.frame:Show()
+		OL.Versions:Query(false)
+	end
+	if windows.trade and OL.Trade and OL.Trade.list and #OL.Trade.list > 0 then
+		OL.Trade:Show()
+	end
+end
+
+function Session:CatchUp(ask)
+	local restored = false
+	if not self:IsActive() then
+		restored = self:Restore()
+	end
+	if self:IsActive() then
+		self:ShowUI()
+	end
+	self:RestoreWindows()
+	if not IsInGroup() then
+		return
+	end
+	if not ask and not restored then
+		return
+	end
+	if UnitIsGroupLeader("player") then
+		self:Announce()
+	else
+		OL.Comms:Send("syncq")
+	end
+end
+
+function Session:OnSyncRequest()
+	if not UnitIsGroupLeader("player") then
+		return
+	end
+	if not self:IsActive() then
+		self:Restore()
+	end
+	self:Announce()
+end
+
+function Session:TakeSession(id, sender)
+	if not self:IsActive() then
+		self:Restore()
+	end
+	if self.active and self.active.id == id then
+		return false
+	end
+	self.active = { id = id, items = {}, owner = sender }
+	self:OpenSessionWindows()
+	return true
+end
+
+function Session:ApplyMark(id, index, awardedTo, closed, response)
+	if not index or not self.active or self.active.id ~= id then
+		return
+	end
+	local item = self.active.items[index]
+	if not item then
+		return
+	end
+	local changed = false
+	if awardedTo and awardedTo ~= "" and not item.awardedTo then
+		item.awardedTo = awardedTo
+		changed = true
+		OL.History:AddAward(id, {
+			index = index,
+			winner = awardedTo,
+			link = item.link,
+			response = response or "",
+			time = time(),
+		})
+	end
+	if not item.awardedTo and closed and (closed == "skip" or closed == "disenchant") and not item.closed then
+		item.closed = closed
+		changed = true
+		OL.History:AddAward(id, {
+			index = index,
+			winner = closed == "disenchant" and "Disenchant" or "Skip",
+			link = item.link,
+			response = closed,
+			time = time(),
+		})
+	end
+	if changed then
+		repaint()
+	end
 end
 
 local function fromLeader(sender)
@@ -354,6 +588,34 @@ local function canEnd(sender)
 end
 
 function Session:OnComm(sender, op, fields)
+	if op == "sync" then
+		if fromLeader(sender) and (not fields[1] or fields[1] == "") then
+			if self:IsActive() then
+				self:Clear()
+				OL:Print("Loot session closed.")
+			elseif OL.db then
+				OL.db.session = nil
+			end
+		end
+		return
+	end
+	if op == "keep" or op == "kept" or op == "mark" then
+		if not fromLeader(sender) then
+			return
+		end
+	end
+	if op == "keep" then
+		self:ApplyVote(fields[1], tonumber(fields[2]), fields[3], textOrNil(fields[4]), numberOrNil(fields[5]), numberOrNil(fields[6]), textOrNil(fields[7]), textOrNil(fields[8]), textOrNil(fields[9]))
+		return
+	end
+	if op == "kept" then
+		self:ApplyBallot(fields[1], tonumber(fields[2]), fields[3], textOrNil(fields[4]))
+		return
+	end
+	if op == "mark" then
+		self:ApplyMark(fields[1], tonumber(fields[2]), textOrNil(fields[3]), textOrNil(fields[4]), textOrNil(fields[5]))
+		return
+	end
 	if not fields[1] then
 		return
 	end
@@ -361,39 +623,33 @@ function Session:OnComm(sender, op, fields)
 		return
 	end
 	local leader = fromLeader(sender)
-	local testBegin = op == "begin" and fields[3] == "1"
-	local testItem = op == "item" and fields[9] == "1"
-	local testVend = op == "vend" and fields[2] == "1"
-	if (op == "begin" or op == "item" or op == "vend") and not leader and not testBegin and not testItem and not testVend then
+	if (op == "begin" or op == "item" or op == "vend") and not leader then
 		return
 	end
 	if op == "begin" then
-		if not (self.active and self.active.id == fields[1]) then
-			self.active = { id = fields[1], items = {}, owner = sender, test = testBegin }
+		if self:TakeSession(fields[1], sender) then
 			OL.History:Ensure(fields[1], time())
 			OL.Council:Rebuild()
 		end
+		self:Bind()
 		self:ShowUI()
 		return
 	end
 	if op == "item" then
-		if not self.active or self.active.id ~= fields[1] then
-			self.active = { id = fields[1], items = {}, owner = sender, test = testItem }
-		end
+		self:TakeSession(fields[1], sender)
 		local index = tonumber(fields[2])
 		if not index then
 			return
 		end
-		self.active.items[index] = {
+		self:StoreItem(index, {
 			link = fields[8],
 			ilvl = numberOrNil(fields[3]) or 0,
 			equipLoc = fields[4] or "",
 			texture = textureOf(fields[5]),
 			classID = numberOrNil(fields[6]),
 			subClassID = numberOrNil(fields[7]),
-			votes = {},
-			ballots = {},
-		}
+		})
+		self:Bind()
 		self:ShowUI()
 		return
 	end
@@ -435,7 +691,7 @@ function Session:OnComm(sender, op, fields)
 					response = reason,
 					time = time(),
 				})
-				OL.RaiderFrame:Refresh()
+				repaint()
 				OL.CouncilFrame:AdvanceFrom(index)
 			end
 		end
@@ -448,7 +704,7 @@ function Session:OnComm(sender, op, fields)
 			if item and not item.awardedTo then
 				item.awardedTo = fields[3]
 				OL.Trade:Add(item, fields[3], fields[1], index)
-				OL.RaiderFrame:Refresh()
+				repaint()
 				OL.CouncilFrame:AdvanceFrom(index)
 			end
 		end

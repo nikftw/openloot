@@ -8,14 +8,14 @@ Copy `openloot` into `Interface/AddOns`. The folder name stays `openloot`.
 
 ## Commands
 
-- `/openloot` status
-- `/openloot on` / `off`
 - `/openloot run` scan the leader's bags and start
 - `/openloot trade` items still owed by the loot holder
 - `/openloot v` who is current, old, or missing the addon
 - `/openloot h` award history for the selected session
-- `/openloot dev` send every bag item as a test session. `dev off` clears it
+- `/openloot resize` show or hide the window resize handles
 - `/openloot demo` local sample screens. `demo off` clears them
+
+`/ol` is the same command.
 
 Delete `Dev.lua` and its line in `openloot.toc` before a public release.
 
@@ -23,4 +23,4 @@ Delete `Dev.lua` and its line in `openloot.toc` before a public release.
 
 Entering a raid, or reloading there, asks the leader once. Yes makes them the runner: Pass on Loot stays off and their rolls auto-need. Everyone else turns Pass on Loot on. That restores when OpenLoot turns off, they leave the group, or they leave the raid.
 
-`/openloot run` and `/openloot dev` send the bag items to everyone in the raid, in or out of the zone. Anyone in the raid can respond. The raid leader and anyone with assist also get the council window. The holder gets a trade list. Anyone who sees an award, skip, or disenchant keeps it in `/openloot h`. Window positions are remembered.
+`/openloot run` sends the bag items to everyone in the raid, in or out of the zone. Anyone in the raid can respond. People in the raid who can see officer chat also get the council window. The holder gets a trade list. Anyone who sees an award, skip, or disenchant keeps it in `/openloot h`. Window positions are remembered.

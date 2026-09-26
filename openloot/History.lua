@@ -15,6 +15,7 @@ function History:Ensure(id, when)
 	local entry = { id = id, time = when or time(), awards = {} }
 	store.sessions[id] = entry
 	table.insert(store.order, 1, id)
+	self.selected = id
 	if self.frame and self.frame:IsShown() then
 		self:Refresh()
 	end
@@ -50,6 +51,11 @@ function History:EnsureFrame()
 	end
 	local frame = OL.UI:CreateWindow("OpenLoot History", 640, 406)
 	self.frame = frame
+	OL:WatchWindow(frame, "history")
+	frame:HookScript("OnShow", function()
+		local order = OL.db.history and OL.db.history.order
+		self.selected = order and order[1] or nil
+	end)
 	self.sessionButtons = {}
 	self.awardRows = {}
 
@@ -73,25 +79,26 @@ function History:EnsureFrame()
 	self.main:SetPoint("TOPLEFT", self.sessionPane, "TOPRIGHT", 4, 0)
 	self.main:SetPoint("BOTTOMRIGHT", 0, 0)
 
+	local px = OL.UI:Pixel()
 	self.headerName = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
-	self.headerName:SetPoint("TOPLEFT", 4, 0)
+	self.headerName:SetPoint("TOPLEFT", 4, -px)
 	self.headerName:SetWidth(100)
 	self.headerName:SetJustifyH("LEFT")
 	self.headerName:SetWordWrap(false)
 	self.headerName:SetText("Name")
 	self.headerItem = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
-	self.headerItem:SetPoint("TOPLEFT", 108, 0)
+	self.headerItem:SetPoint("TOPLEFT", 108 - px, -px)
 	self.headerItem:SetJustifyH("LEFT")
 	self.headerItem:SetWordWrap(false)
 	self.headerItem:SetText("Item")
 	self.headerTime = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
-	self.headerTime:SetPoint("TOPRIGHT", -4, 0)
+	self.headerTime:SetPoint("TOPRIGHT", -4, -px)
 	self.headerTime:SetWidth(92)
 	self.headerTime:SetJustifyH("RIGHT")
 	self.headerTime:SetWordWrap(false)
 	self.headerTime:SetText("Time")
 	self.headerResponse = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
-	self.headerResponse:SetPoint("TOPRIGHT", self.headerTime, "TOPLEFT", -4, 0)
+	self.headerResponse:SetPoint("TOPRIGHT", self.headerTime, "TOPLEFT", -4 - (2 * px), 0)
 	self.headerResponse:SetWidth(76)
 	self.headerResponse:SetJustifyH("LEFT")
 	self.headerResponse:SetWordWrap(false)
@@ -194,6 +201,9 @@ function History:Refresh()
 		return
 	end
 	local order = OL.db.history.order
+	if not self.selected or not OL.db.history.sessions[self.selected] then
+		self.selected = order[1]
+	end
 	local y = 0
 	for index, id in ipairs(order) do
 		local button = self.sessionButtons[index]
@@ -212,17 +222,13 @@ function History:Refresh()
 				button:SetBaseColor(0.16, 0.16, 0.18, 1)
 			end
 			button:SetScript("OnClick", function()
-				if self.selected == id then
-					self.selected = nil
-				else
-					self.selected = id
-				end
+				self.selected = id
 				self:Refresh()
 			end)
 			button:ClearAllPoints()
 			button:SetPoint("TOPLEFT", self.sessionScroll.content, "TOPLEFT", 0, -y)
 			button:Show()
-			y = y + 28
+			y = y + OL.UI:P(28)
 		end
 	end
 	for index = #order + 1, #self.sessionButtons do
@@ -255,7 +261,7 @@ function History:Refresh()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 24
+		y = y + OL.UI:P(24)
 	end
 	for index = #awards + 1, #self.awardRows do
 		self.awardRows[index]:Hide()
@@ -265,7 +271,7 @@ end
 
 function History:CreateAwardRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(24)
+	row:SetHeight(OL.UI:P(24))
 	row:SetClipsChildren(true)
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)

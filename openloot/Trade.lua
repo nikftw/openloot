@@ -183,6 +183,7 @@ function Trade:Ensure()
 	end
 	local frame = OL.UI:CreateWindow("OpenLoot Trades", 340, 200)
 	self.frame = frame
+	OL:WatchWindow(frame, "trade")
 	frame:HookScript("OnHide", function()
 		self:WatchRange(false)
 	end)
@@ -238,6 +239,8 @@ function Trade:Refresh()
 	if not self.frame or not self.frame:IsShown() then
 		return
 	end
+	local rowH = OL.UI:P(30)
+	local stride = OL.UI:Snap(rowH + 3 * OL.UI:Pixel())
 	local y = 0
 	for index, entry in ipairs(self.list) do
 		local row = self.rows[index]
@@ -267,12 +270,19 @@ function Trade:Refresh()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 34
+		y = y + stride
 	end
 	for index = #self.list + 1, #self.rows do
 		self.rows[index]:Hide()
 	end
 	self.scroll.content:SetHeight(math.max(1, y))
+	if not self.frame.collapsed and not self.frame.gripSized then
+		local count = math.max(#self.list, 1)
+		local contentH = count > 4 and (4 * stride + rowH * 0.5) or ((count - 1) * stride + rowH)
+		local height = OL.UI:FitHeight(contentH)
+		self.frame:SetHeight(height)
+		self.frame.expandedHeight = height
+	end
 	if #self.list == 0 then
 		self.frame:Hide()
 	end
@@ -280,7 +290,7 @@ end
 
 function Trade:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(30)
+	row:SetHeight(OL.UI:P(30))
 	row:SetClipsChildren(true)
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
@@ -426,20 +436,18 @@ function Trade:PlaceOne(bag, slot, tradeSlot, entry)
 	if not self.trading then
 		return
 	end
+	local function fail()
+		pcall(ClearCursor)
+		OL:Print("Couldn't add " .. entry.link .. " to the trade.")
+	end
 	local info = C_Container.GetContainerItemInfo(bag, slot)
 	if not info or info.isLocked or not info.hyperlink then
-		OL:Print("Couldn't add " .. entry.link .. " to the trade.")
+		fail()
 		return
 	end
 	pcall(ClearCursor)
-	if not pcall(C_Container.PickupContainerItem, bag, slot) then
-		pcall(ClearCursor)
-		OL:Print("Couldn't add " .. entry.link .. " to the trade.")
-		return
-	end
-	if not pcall(ClickTradeButton, tradeSlot) then
-		pcall(ClearCursor)
-		OL:Print("Couldn't add " .. entry.link .. " to the trade.")
+	if not pcall(C_Container.PickupContainerItem, bag, slot) or not pcall(ClickTradeButton, tradeSlot) then
+		fail()
 	end
 end
 

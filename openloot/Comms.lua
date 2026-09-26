@@ -268,7 +268,9 @@ function OL:OnComm(sender, op, fields)
 		self.RaidMode:OnComm(sender, op, fields)
 	elseif op == "ver" or op == "verq" then
 		self.Versions:OnComm(sender, op, fields)
-	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" or op == "end" then
+	elseif op == "syncq" then
+		self.Session:OnSyncRequest()
+	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" or op == "end" or op == "sync" or op == "keep" or op == "kept" or op == "mark" then
 		self.Session:OnComm(sender, op, fields)
 	end
 end

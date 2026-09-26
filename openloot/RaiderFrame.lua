@@ -20,43 +20,64 @@ for index, spec in ipairs(ROW_BUTTONS) do
 	end
 end
 
-local RESPONSE_TEXT = {
-	BIS = "BIS",
-	UPGRADE = "Upgrade",
-	OFFSPEC = "Offspec",
-	PASS = "Pass",
-}
+local FULL_WIDTH = CONTROL_WIDTH * 2 + 16
+local ICON_COLUMN = 44
+local COMPACT_WIDTH = 8 + ICON_COLUMN + 4 + CONTROL_WIDTH + 4
+
+local function rowStride()
+	return OL.UI:Snap(OL.UI:P(ROW_HEIGHT) + OL.UI:P(4) - OL.UI:Pixel())
+end
 
 function Frame:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot", CONTROL_WIDTH * 2 + 16, 596)
+	local frame = OL.UI:CreateWindow("OpenLoot", FULL_WIDTH, 596)
 	self.frame = frame
+	OL:WatchWindow(frame, "raider")
 	self.rows = {}
 	self.showAll = false
 	self.onlyVoted = false
+	self.compact = false
+
+	local px = OL.UI:Pixel()
+	local side = OL.UI:P(4)
+	self.layout = OL.UI:FlatButton(frame.content, "<", 18, 18)
+	self.layout:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", side, px * 4)
 
 	local scroll = OL.UI:CreateScroll(frame.content)
-	scroll:SetPoint("TOPLEFT", 0, 0)
-	scroll:SetPoint("BOTTOMRIGHT", 0, 22)
+	scroll:SetPoint("TOPLEFT", frame.content, "TOPLEFT", 0, 0)
+	scroll:SetPoint("TOPRIGHT", frame.content, "TOPRIGHT", 0, 0)
+	scroll:SetPoint("BOTTOM", self.layout, "TOP", 0, OL.UI:P(4))
 	self.scroll = scroll
 
 	self.empty = OL.UI:Text(frame.content, "OVERLAY", "GameFontDisable")
-	self.empty:SetPoint("TOP", 0, -12)
+	self.empty:SetPoint("TOP", 0, -OL.UI:P(12))
 	self.empty:SetText("No usable items.")
 	self.empty:Hide()
+	self:ShowLayoutMark()
+	self.layout:SetScript("OnClick", function()
+		if not self.compact then
+			self.expandedWidth = self.frame:GetWidth()
+		end
+		self.compact = not self.compact
+		self:ShowLayoutMark()
+		self:ApplyWidth()
+		self:RememberView()
+		self:Refresh()
+	end)
 
 	self.toggle = OL.UI:FlatButton(frame.content, "Show all", 90, 18)
-	self.toggle:SetPoint("BOTTOMLEFT", frame.content, "BOTTOMLEFT", 0, 0)
+	self.toggle:SetPoint("BOTTOMLEFT", self.layout, "BOTTOMRIGHT", OL.UI:P(4), 0)
 	self.toggle:SetScript("OnClick", function()
 		self.showAll = not self.showAll
 		self.toggle:SetText(self.showAll and "Show usable" or "Show all")
+		self:RememberView()
 		self:Refresh()
 	end)
 
 	self.voted = OL.UI:FlatButton(frame.content, "Only voted", 92, 18)
-	self.voted:SetPoint("BOTTOMLEFT", self.toggle, "BOTTOMRIGHT", 4, 0)
+	self.voted:SetPoint("BOTTOMLEFT", self.toggle, "BOTTOMRIGHT", OL.UI:P(4), 0)
 	self.voted:SetScript("OnClick", function()
 		self.onlyVoted = not self.onlyVoted
 		if self.onlyVoted then
@@ -64,8 +85,55 @@ function Frame:Ensure()
 		else
 			self.voted:SetBaseColor(0.16, 0.16, 0.18, 1)
 		end
+		self:RememberView()
 		self:Refresh()
+		self.scroll:SetVerticalScroll(0)
 	end)
+	self:ApplySavedView()
+end
+
+function Frame:RememberView()
+	OL.db.windows = OL.db.windows or {}
+	OL.db.windows.showAll = self.showAll and true or false
+	OL.db.windows.onlyVoted = self.onlyVoted and true or false
+	OL.db.windows.compact = self.compact and true or false
+end
+
+function Frame:ApplySavedView()
+	local windows = OL.db and OL.db.windows
+	if not windows then
+		return
+	end
+	self.showAll = windows.showAll and true or false
+	self.onlyVoted = windows.onlyVoted and true or false
+	self.compact = windows.compact and true or false
+	self.toggle:SetText(self.showAll and "Show usable" or "Show all")
+	if self.onlyVoted then
+		self.voted:SetBaseColor(0.22, 0.26, 0.32, 1)
+	end
+	self:ShowLayoutMark()
+	if self.compact then
+		self.expandedWidth = self.frame:GetWidth()
+		self:ApplyWidth()
+	end
+end
+
+function Frame:ShowLayoutMark()
+	self.layout:SetText(self.compact and ">" or "<")
+end
+
+function Frame:ApplyWidth()
+	local frame = self.frame
+	for _, row in ipairs(self.rows) do
+		row.compact = self.compact
+	end
+	if self.compact then
+		frame.layoutWidth = self.expandedWidth or FULL_WIDTH
+		frame:SetWidth(COMPACT_WIDTH)
+	else
+		frame.layoutWidth = nil
+		frame:SetWidth(self.expandedWidth or FULL_WIDTH)
+	end
 end
 
 function Frame:Show()
@@ -111,6 +179,7 @@ function Frame:Refresh()
 	end
 	self.empty:SetShown(#visible == 0)
 
+	local stride = rowStride()
 	local y = 0
 	for rowIndex, entry in ipairs(visible) do
 		local row = self.rows[rowIndex]
@@ -119,26 +188,32 @@ function Frame:Refresh()
 			self.rows[rowIndex] = row
 		end
 		row:Show()
-		local height = self:FillRow(row, entry.index, entry.item)
+		self:FillRow(row, entry.index, entry.item)
+		y = OL.UI:Snap((rowIndex - 1) * stride)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
-		y = y + height + 4
 	end
 	for rowIndex = #visible + 1, #self.rows do
 		self.rows[rowIndex]:Hide()
 	end
 	local view = self.scroll:GetHeight() or 0
-	local step = ROW_HEIGHT + 4
+	local step = stride
 	local overscroll = 0
 	if view > step then
 		overscroll = view - step
 	end
-	self.scroll.content:SetHeight(math.max(1, y + overscroll))
+	local filled = #visible > 0 and OL.UI:Snap(#visible * stride) or 0
+	self.scroll.content:SetHeight(math.max(1, OL.UI:Snap(filled + overscroll)))
 	local maxScroll = self.scroll:GetVerticalScrollRange() or 0
-	if self.scroll:GetVerticalScroll() > maxScroll then
-		self.scroll:SetVerticalScroll(maxScroll)
+	local current = OL.UI:Snap(self.scroll:GetVerticalScroll() or 0)
+	if current > maxScroll then
+		current = maxScroll
 	end
+	if current < 0 then
+		current = 0
+	end
+	self.scroll:SetVerticalScroll(OL.UI:Snap(current))
 	self.refreshing = false
 end
 
@@ -158,7 +233,7 @@ function Frame:AtTop(row)
 end
 
 function Frame:Advance(row)
-	local step = (row:GetHeight() or ROW_HEIGHT) + 4
+	local step = rowStride()
 	local hops = 1
 	local index
 	for candidateIndex, candidate in ipairs(self.rows) do
@@ -183,12 +258,12 @@ function Frame:Advance(row)
 	if nextScroll < 0 then
 		nextScroll = 0
 	end
-	scroll:SetVerticalScroll(nextScroll)
+	scroll:SetVerticalScroll(OL.UI:Snap(nextScroll))
 end
 
 function Frame:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(ROW_HEIGHT)
+	row:SetHeight(OL.UI:P(ROW_HEIGHT))
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
 	row:SetClipsChildren(false)
@@ -198,65 +273,83 @@ function Frame:CreateRow(parent)
 	row.item:SetPoint("BOTTOMLEFT", 0, 0)
 	row.item:SetClipsChildren(true)
 	row:SetScript("OnSizeChanged", function(self, width)
-		if width and width > 0 then
-			self.item:SetWidth(math.floor((width - 8) * 0.5))
+		if not width or width <= 0 then
+			return
+		end
+		if self.compact then
+			self.item:SetWidth(OL.UI:P(ICON_COLUMN))
+		else
+			self.item:SetWidth(OL.UI:Snap((width - OL.UI:P(8)) * 0.5))
 		end
 	end)
 
 	row.icon = OL.UI:Icon(row.item, 36)
-	row.icon:SetPoint("LEFT", 4, 0)
+	row.icon:SetPoint("LEFT", OL.UI:P(4), 0)
 	row.link = OL.UI:Text(row.item, "OVERLAY", "GameFontHighlight")
-	row.link:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 4, -4)
-	row.link:SetPoint("RIGHT", -4, 0)
+	row.link:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", OL.UI:P(4), -OL.UI:P(4))
+	row.link:SetPoint("RIGHT", -OL.UI:P(4), 0)
 	row.link:SetJustifyH("LEFT")
 	row.link:SetWordWrap(false)
 	row.meta = OL.UI:Text(row.item, "OVERLAY", "GameFontHighlight")
-	row.meta:SetPoint("TOPLEFT", row.link, "BOTTOMLEFT", 0, -4)
-	row.meta:SetPoint("RIGHT", -4, 0)
+	row.meta:SetPoint("TOPLEFT", row.link, "BOTTOMLEFT", 0, -OL.UI:P(4))
+	row.meta:SetPoint("RIGHT", -OL.UI:P(4), 0)
 	row.meta:SetJustifyH("LEFT")
 	row.meta:SetWordWrap(false)
 
 	row.controls = CreateFrame("Frame", nil, row)
-	row.controls:SetWidth(CONTROL_WIDTH)
-	row.controls:SetPoint("TOPRIGHT", -4, 0)
-	row.controls:SetPoint("BOTTOMRIGHT", -4, 0)
+	row.controls:SetPoint("TOPRIGHT", -OL.UI:P(4), 0)
+	row.controls:SetPoint("BOTTOMRIGHT", -OL.UI:P(4), 0)
 
 	row.buttons = {}
+	local gap = OL.UI:P(4)
 	local x = 0
+	local used = 0
 	for _, spec in ipairs(ROW_BUTTONS) do
-		local button = OL.UI:FlatButton(row.controls, spec.text, spec.width, 18)
+		local buttonWidth = OL.UI:P(spec.width)
+		local button = OL.UI:FlatButton(row.controls, spec.text, buttonWidth, 18)
 		button.responseId = spec.id
-		button:SetPoint("TOPLEFT", row.controls, "TOPLEFT", x, -4)
+		button:SetPoint("TOPLEFT", row.controls, "TOPLEFT", x, -gap)
 		row.buttons[#row.buttons + 1] = button
-		x = x + spec.width + 4
+		x = x + buttonWidth + gap
+		used = used + buttonWidth
 	end
+	if #ROW_BUTTONS > 1 then
+		used = used + gap * (#ROW_BUTTONS - 1)
+	end
+	row.controls:SetWidth(used)
 	row.choice = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
 	row.choice:SetPoint("LEFT", row.controls, "TOPLEFT", 0, -13)
 	row.choice:Hide()
 	row.back = OL.UI:FlatButton(row.controls, "Back", 44, 18)
-	row.back:SetPoint("LEFT", row.choice, "RIGHT", 4, 0)
+	row.back:SetPoint("LEFT", row.choice, "RIGHT", OL.UI:P(4), 0)
 	row.back:Hide()
 
 	row.noteLabel = OL.UI:Text(row.controls, "OVERLAY", "GameFontDisableSmall")
-	row.noteLabel:SetPoint("BOTTOMLEFT", row.controls, "BOTTOMLEFT", 0, 4)
+	local noteH = OL.UI:P(18)
+	row.noteLabel:SetPoint("BOTTOMLEFT", row.controls, "BOTTOMLEFT", 0, gap)
 	row.noteLabel:SetText("NB")
+	local labelW = OL.UI:Snap((row.noteLabel:GetStringWidth() or 0) + OL.UI:Pixel())
+	if not labelW or labelW < OL.UI:P(14) then
+		labelW = OL.UI:P(14)
+	end
 	row.save = OL.UI:FlatButton(row.controls, "Save", 40, 18)
-	row.save:SetPoint("BOTTOMRIGHT", row.controls, "BOTTOMRIGHT", 0, 4)
+	row.save:SetPoint("BOTTOMRIGHT", row.controls, "BOTTOMRIGHT", 0, gap)
 	row.noteFrame = CreateFrame("Frame", nil, row.controls, "BackdropTemplate")
-	row.noteFrame:SetHeight(18)
-	row.noteFrame:SetPoint("BOTTOMLEFT", row.noteLabel, "BOTTOMRIGHT", 4, 0)
-	row.noteFrame:SetPoint("BOTTOMRIGHT", row.save, "BOTTOMLEFT", -4, 0)
-	row.noteFrame:SetBackdrop({ bgFile = OL.UI.WHITE, edgeFile = OL.UI.WHITE, edgeSize = 1 })
+	row.noteFrame:SetHeight(noteH)
+	row.noteFrame:SetPoint("BOTTOMLEFT", row.controls, "BOTTOMLEFT", OL.UI:Snap(labelW + gap), gap)
+	row.noteFrame:SetPoint("BOTTOMRIGHT", row.save, "BOTTOMLEFT", -gap, 0)
+	row.noteFrame:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row.noteFrame:SetBackdropColor(0.07, 0.07, 0.08, 1)
-	row.noteFrame:SetBackdropBorderColor(0.26, 0.26, 0.28, 1)
+	OL.UI:Hairline(row.noteFrame, 0.26, 0.26, 0.28, 1)
 	row.noteBox = CreateFrame("EditBox", nil, row.noteFrame)
-	row.noteBox:SetPoint("TOPLEFT", 3, -2)
-	row.noteBox:SetPoint("BOTTOMRIGHT", -3, 2)
+	local inset = OL.UI:Pixel()
+	row.noteBox:SetPoint("TOPLEFT", inset, -inset)
+	row.noteBox:SetPoint("BOTTOMRIGHT", -inset, inset)
 	row.noteBox:SetAutoFocus(false)
 	row.noteBox:SetFontObject(GameFontHighlightSmall)
 	OL.UI:Face(row.noteBox)
 	row.noteBox:SetMaxLetters(80)
-	row.noteBox:SetTextInsets(2, 2, 0, 0)
+	row.noteBox:SetTextInsets(inset, inset, 0, 0)
 
 	row.icon:EnableMouse(true)
 	row.icon:SetScript("OnEnter", function(self)
@@ -271,6 +364,9 @@ end
 function Frame:FillRow(row, index, item)
 	row.linkText = item.link
 	row.icon:SetIcon(item.texture)
+	row.compact = self.compact
+	row.link:SetShown(not self.compact)
+	row.meta:SetShown(not self.compact)
 	row.link:SetText(item.link)
 	row.meta:SetText(OL.Items:RowMeta(item))
 	local awarded = item.awardedTo ~= nil
@@ -297,7 +393,7 @@ function Frame:FillRow(row, index, item)
 	elseif awarded then
 		row.choice:SetText("Awarded " .. OL:ShortName(item.awardedTo or ""))
 	else
-		row.choice:SetText(RESPONSE_TEXT[item.myResponse] or "")
+		row.choice:SetText(OL:ResponseText(item.myResponse))
 	end
 	row.back:SetShown(locked)
 	row.back:SetScript("OnClick", function()
@@ -319,6 +415,7 @@ function Frame:FillRow(row, index, item)
 		OL.Session:SetResponse(index, item.myResponse, edit:GetText())
 	end)
 	row.noteBox:SetScript("OnEditFocusLost", nil)
-	row:SetHeight(ROW_HEIGHT)
-	return ROW_HEIGHT
+	local height = OL.UI:P(ROW_HEIGHT)
+	row:SetHeight(height)
+	return height
 end

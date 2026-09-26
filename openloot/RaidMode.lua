@@ -126,26 +126,6 @@ function Raid:Disable()
 	OL:Print("OpenLoot is off for this raid.")
 end
 
-function Raid:EnableFromSlash()
-	if not OL:IsLive() then
-		OL:Print("You need to be in a raid.")
-		return
-	end
-	if not self:CanLead() then
-		OL:Print("Only a council raid leader can turn OpenLoot on.")
-		return
-	end
-	self:Enable()
-end
-
-function Raid:DisableFromSlash()
-	if not UnitIsGroupLeader("player") then
-		OL:Print("Only the raid leader can turn OpenLoot off.")
-		return
-	end
-	self:Disable()
-end
-
 function Raid:ConsiderPrompt()
 	if not OL:IsLive() or not self:CanLead() then
 		return
@@ -202,6 +182,9 @@ function Raid:OnEnter(isReload)
 	if shouldAsk then
 		self.askedMap = map
 		self:RequestState()
+	end
+	if OL.Session then
+		OL.Session:CatchUp(shouldAsk)
 	end
 	self:ConsiderPrompt()
 end
