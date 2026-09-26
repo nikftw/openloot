@@ -23,4 +23,4 @@ Delete `Dev.lua` and its line in `openloot.toc` before a public release.
 
 Entering a raid, or reloading there, asks the leader once. Yes makes them the runner: Pass on Loot stays off and their rolls auto-need. Everyone else turns Pass on Loot on. That restores when OpenLoot turns off, they leave the group, or they leave the raid.
 
-`/openloot run` keeps guild members who are online and can speak in officer chat, then sends rare-or-better unbound or still-tradeable bag items to everyone in the raid, in or out of the zone. Anyone in the raid can respond. Officers also get the council window. The holder gets a trade list. Anyone who sees an award, skip, or disenchant keeps it in `/openloot h`. Window positions are remembered.
+`/openloot run` and `/openloot dev` send the bag items to everyone in the raid, in or out of the zone. Anyone in the raid can respond. The raid leader and anyone with assist also get the council window. The holder gets a trade list. Anyone who sees an award, skip, or disenchant keeps it in `/openloot h`. Window positions are remembered.

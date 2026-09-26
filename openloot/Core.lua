@@ -43,7 +43,14 @@ function OL:ShortName(name)
 	if not name or name == "" then
 		return ""
 	end
-	return Ambiguate(name, "short")
+	if issecretvalue and issecretvalue(name) then
+		return ""
+	end
+	local ok, short = pcall(Ambiguate, name, "short")
+	if not ok or not short or short == "" then
+		return ""
+	end
+	return short
 end
 
 function OL:FullName(unit)

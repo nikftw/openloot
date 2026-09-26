@@ -171,14 +171,50 @@ function Council:IsCouncilName(name)
 	return info and info.council or false
 end
 
+function Council:HasAssist(unit)
+	if not unit or not UnitExists(unit) then
+		return false
+	end
+	if UnitIsGroupLeader(unit) then
+		return true
+	end
+	if UnitIsGroupAssistant and UnitIsGroupAssistant(unit) then
+		return true
+	end
+	return false
+end
+
 function Council:IsLocalCouncil()
-	return self:IsCouncilName(OL:FullName("player"))
+	if OL.devMode then
+		return self:IsCouncilName(OL:FullName("player"))
+	end
+	return self:HasAssist("player")
 end
 
 function Council:Count()
+	if OL.devMode and OL.devCouncil then
+		local count = 0
+		for _, info in pairs(OL.devCouncil) do
+			if info.council then
+				count = count + 1
+			end
+		end
+		return count
+	end
+	if not IsInGroup() then
+		return 0
+	end
 	local count = 0
-	for _, info in pairs(self.byShort) do
-		if info.council then
+	for index = 1, GetNumGroupMembers() do
+		local unit
+		if IsInRaid() then
+			unit = "raid" .. index
+		elseif index == 1 then
+			unit = "player"
+		else
+			unit = "party" .. (index - 1)
+		end
+		if self:HasAssist(unit) then
 			count = count + 1
 		end
 	end

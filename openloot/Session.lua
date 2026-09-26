@@ -88,6 +88,8 @@ function Session:ShowUI()
 	OL.RaiderFrame:Show()
 	if OL.Council:IsLocalCouncil() then
 		OL.CouncilFrame:Show()
+	elseif OL.CouncilFrame then
+		OL.CouncilFrame:Hide()
 	end
 	OL.RaiderFrame:Refresh()
 	OL.CouncilFrame:Refresh()
@@ -117,7 +119,12 @@ function Session:Start(items)
 	end
 	OL.Comms:Send(join({ "vend", id, test }))
 	self:ShowUI()
-	OL:Print(string.format("Session started with %d items.", #items))
+	local others = IsInGroup() and math.max(0, GetNumGroupMembers() - 1) or 0
+	if others == 0 then
+		OL:Print(string.format("Session started with %d items on this character. Join a raid before starting if someone else should see it.", #items))
+	else
+		OL:Print(string.format("Session started with %d items. Sent to %d other %s.", #items, others, others == 1 and "player" or "players"))
+	end
 end
 
 function Session:Run()
@@ -321,9 +328,11 @@ function Session:OnComm(sender, op, fields)
 		return
 	end
 	if op == "begin" then
-		self.active = { id = fields[1], items = {}, owner = sender, test = testBegin }
-		OL.History:Ensure(fields[1], time())
-		OL.Council:Rebuild()
+		if not (self.active and self.active.id == fields[1]) then
+			self.active = { id = fields[1], items = {}, owner = sender, test = testBegin }
+			OL.History:Ensure(fields[1], time())
+			OL.Council:Rebuild()
+		end
 		return
 	end
 	if op == "item" then
