@@ -1,4 +1,4 @@
--- Temporary in-game demo. Delete this file and its line in openloot.toc before release.
+-- Temporary test tools. Delete this file and its line in openloot.toc before release.
 local OL = OpenLoot
 
 OL.Dev = {}
@@ -35,6 +35,7 @@ local function piece(itemID, name, color, ilvl, equipLoc, classID, subClassID)
 		classID = classID,
 		subClassID = subClassID,
 		votes = {},
+		ballots = {},
 	}
 end
 
@@ -50,6 +51,37 @@ local function vote(response, slotIlvl, note, s1, s2)
 end
 
 function Dev:Stop()
+	OL.testSession = false
+	if OL.Session then
+		OL.Session:Clear()
+	end
+	OL:Print("Test session cleared.")
+end
+
+function Dev:Start()
+	if OL.devMode then
+		self:StopDemo(true)
+	end
+	local items = OL.Items:ScanBags(true)
+	if #items == 0 then
+		OL:Print("No items in your bags.")
+		return
+	end
+	OL.testSession = true
+	OL.Session:Start(items)
+	OL:Print("Test session started from your bags. /openloot dev off clears it.")
+end
+
+function Dev:Slash(rest)
+	local sub = (rest or ""):lower()
+	if sub == "off" then
+		self:Stop()
+		return
+	end
+	self:Start()
+end
+
+function Dev:StopDemo(quiet)
 	OL.devMode = false
 	OL.devRoster = nil
 	OL.devCouncil = nil
@@ -71,9 +103,10 @@ function Dev:Stop()
 	end
 	local store = OL.db and OL.db.history
 	if store then
-		store.sessions["dev-demo"] = nil
 		for index = #store.order, 1, -1 do
-			if store.order[index] == "dev-demo" then
+			local id = store.order[index]
+			if id and id:sub(1, 8) == "dev-demo" then
+				store.sessions[id] = nil
 				table.remove(store.order, index)
 			end
 		end
@@ -89,25 +122,25 @@ function Dev:Stop()
 	if OL.Versions and OL.Versions.frame then
 		OL.Versions.frame:Hide()
 	end
-	OL:Print("Dev mode off.")
-end
-
-function Dev:Place(frame, point, x, y)
-	if not frame then
-		return
+	if not quiet then
+		OL:Print("Demo off.")
 	end
-	frame:ClearAllPoints()
-	frame:SetPoint(point, UIParent, point, x, y)
 end
 
-function Dev:Start()
+function Dev:Demo()
 	local me = OL:ShortName(OL:FullName("player"))
 	local _, classFile = UnitClass("player")
+	OL.testSession = false
 	OL.devMode = true
 
 	local roster = { { name = me, classFile = classFile } }
 	local council = {}
-	council[me] = { name = me, rankName = "Dev", rankIndex = 0, officerNote = "Main", council = true }
+	local myRank = "Guild Master"
+	local saved = OL.Council.byShort and OL.Council.byShort[me]
+	if saved and saved.rankName and saved.rankName ~= "" then
+		myRank = saved.rankName
+	end
+	council[me] = { name = me, rankName = myRank, rankIndex = 0, officerNote = "Main", council = true }
 	for _, person in ipairs(FAKE) do
 		roster[#roster + 1] = { name = person.name, classFile = person.class }
 		council[person.name] = {
@@ -123,120 +156,140 @@ function Dev:Start()
 
 	local epic = "ffa335ee"
 	local rare = "ff0070dd"
-	local cloak = piece(19019, "Dev Cloak of the Council", epic, 639, "INVTYPE_CLOAK", 4, 1)
-	local ring = piece(17182, "Dev Band of the First", epic, 639, "INVTYPE_FINGER", 4, 0)
-	local trinket = piece(32837, "Dev Spore of Looking", epic, 639, "INVTYPE_TRINKET", 4, 0)
-	local neck = piece(22589, "Dev Chain of Officers", epic, 636, "INVTYPE_NECK", 4, 0)
-	local plate = piece(236329, "Dev Chest of the Wall", epic, 639, "INVTYPE_CHEST", 4, 4)
-	local staff = piece(19019, "Dev Staff of Counting", epic, 639, "INVTYPE_2HWEAPON", 2, 10)
-	local awardedRing = piece(17182, "Dev Loop of the Second", epic, 642, "INVTYPE_FINGER", 4, 0)
-	local cloth = piece(22589, "Dev Robe of the Bench", rare, 626, "INVTYPE_ROBE", 4, 1)
-
-	local gearA = link(19019, "Equipped Cloak", epic)
-	local gearB = link(17182, "Equipped Ring", epic)
-	local responses = {
-		[me] = vote("BIS", 626, "Main set", gearA, nil),
-		Veyra = vote("UPGRADE", 623, "Would replace the cloak", gearA, nil),
-		Thorn = vote("OFFSPEC", 610, nil, gearA, nil),
-		Sable = vote("PASS", 639, nil, gearA, nil),
-		Nyx = vote("BIS", 600, "Clone still needs it", gearA, nil),
-		Bramble = vote("UPGRADE", 630, nil, gearA, nil),
-		Quarrel = vote("PASS", 639, nil, gearA, nil),
-		Moss = vote(nil, nil, nil, nil, nil),
+	local responses = { "BIS", "UPGRADE", "OFFSPEC", "PASS" }
+	local slots = {
+		{ "Cloak", "INVTYPE_CLOAK", 4, 1 },
+		{ "Ring", "INVTYPE_FINGER", 4, 0 },
+		{ "Trinket", "INVTYPE_TRINKET", 4, 0 },
+		{ "Neck", "INVTYPE_NECK", 4, 0 },
+		{ "Chest", "INVTYPE_CHEST", 4, 4 },
+		{ "Staff", "INVTYPE_2HWEAPON", 2, 10 },
+		{ "Robe", "INVTYPE_ROBE", 4, 1 },
+		{ "Helm", "INVTYPE_HEAD", 4, 4 },
+		{ "Legs", "INVTYPE_LEGS", 4, 3 },
+		{ "Gloves", "INVTYPE_HAND", 4, 2 },
 	}
-	cloak.votes = responses
-	cloak.myResponse = "BIS"
-	cloak.myNote = "Main set"
-	cloak.ballots = { Veyra = me, Nyx = "Veyra" }
-
-	ring.votes = {
-		[me] = vote("UPGRADE", 623, nil, gearB, gearB),
-		Veyra = vote("BIS", 610, "Lower ring", gearB, gearB),
-		Thorn = vote("PASS", 639, nil, gearB, gearB),
-		Nyx = vote("OFFSPEC", 616, nil, gearB, gearB),
-	}
-	ring.myResponse = "UPGRADE"
-
-	trinket.votes = { [me] = vote("OFFSPEC", 619, "Already have the other one", gearA, gearB) }
-	neck.votes = {}
-	plate.votes = { Quarrel = vote("BIS", 629, "Plate chest", gearA, nil) }
-	staff.votes = { Nyx = vote("BIS", 615, nil, gearA, nil) }
-	awardedRing.votes = { Veyra = vote("BIS", 610, "This is the one", gearB, gearB) }
-	awardedRing.awardedTo = "Veyra"
-	cloth.votes = { Bramble = vote("UPGRADE", 600, nil, gearA, nil) }
-
-	for _, item in ipairs({ cloak, ring, trinket, neck, plate, staff, awardedRing, cloth }) do
-		for _, person in ipairs(roster) do
-			local cast = item.votes[person.name]
-			if cast and cast.slotIlvl then
-				cast.diff = item.ilvl - cast.slotIlvl
-			end
+	local itemIDs = { 19019, 17182, 32837, 22589, 236329 }
+	local items = {}
+	for index = 1, 30 do
+		local slot = slots[((index - 1) % #slots) + 1]
+		local color = index % 5 == 0 and rare or epic
+		local ilvl = 610 + (index % 30)
+		local item = piece(itemIDs[((index - 1) % #itemIDs) + 1], "Dev " .. slot[1] .. " " .. index, color, ilvl, slot[2], slot[3], slot[4])
+		local dual = slot[2] == "INVTYPE_FINGER" or slot[2] == "INVTYPE_TRINKET"
+		for personIndex, person in ipairs(roster) do
+			local response = responses[((index + personIndex - 2) % #responses) + 1]
+			local slotIlvl = ilvl - ((personIndex * 3 + index) % 24)
+			local note = (index + personIndex) % 3 == 0 and "Demo note " .. index or nil
+			local gearA = link(itemIDs[1], person.name .. " " .. slot[1] .. " 1", epic)
+			local gearB = dual and link(itemIDs[2], person.name .. " " .. slot[1] .. " 2", rare) or nil
+			local cast = vote(response, slotIlvl, note, gearA, gearB)
+			cast.diff = ilvl - slotIlvl
+			item.votes[person.name] = cast
 		end
+		if index == 1 then
+			item.votes[roster[#roster].name] = vote(nil, nil, nil, nil, nil)
+			item.myResponse = "BIS"
+			item.myNote = "Main set"
+		elseif index % 4 == 2 then
+			item.myResponse = responses[((index - 1) % #responses) + 1]
+			item.myNote = "Saved note"
+		end
+		local winner = roster[((index - 1) % #roster) + 1]
+		item.ballots = { Veyra = me, Nyx = winner.name }
+		if index % 6 == 0 then
+			item.awardedTo = winner.name
+		end
+		items[index] = item
 	end
 
 	OL.Session.active = {
 		id = "dev-demo",
 		owner = OL:FullName("player"),
-		items = { cloak, ring, trinket, neck, plate, staff, awardedRing, cloth },
+		items = items,
 	}
 
+	local kept = {}
 	OL.Trade.list = OL.Trade.list or {}
-	local already = false
 	for _, entry in ipairs(OL.Trade.list) do
-		if entry.key == "dev:7" then
-			already = true
+		local key = entry.key or ""
+		if key:sub(1, 4) ~= "dev:" then
+			kept[#kept + 1] = entry
 		end
 	end
-	if not already then
+	OL.Trade.list = kept
+	for index = 1, 8 do
+		local item = items[index * 3]
+		local winner = roster[((index - 1) % #roster) + 1]
 		OL.Trade.list[#OL.Trade.list + 1] = {
-			key = "dev:7",
-			link = awardedRing.link,
-			texture = awardedRing.texture,
-			winner = "Veyra",
+			key = "dev:" .. index,
+			link = item.link,
+			texture = item.texture,
+			winner = winner.name,
 		}
-		OL.Trade.list[#OL.Trade.list + 1] = {
-			key = "dev:2",
-			link = ring.link,
-			texture = ring.texture,
-			winner = "Thorn",
-		}
-		OL.Trade:Save()
 	end
+	OL.Trade:Save()
 
-	local rows = {}
-	for _, person in ipairs(roster) do
-		local cast = awardedRing.votes[person.name] or {}
-		local info = council[person.name]
-		rows[#rows + 1] = {
-			name = person.name,
-			class = person.classFile,
-			rank = info and info.rankName or "",
-			officerNote = info and info.officerNote or "",
-			response = cast.response,
-			slotIlvl = cast.slotIlvl,
-			diff = cast.diff,
-			note = cast.note,
-			s1 = cast.s1,
-			s2 = cast.s2,
-		}
+	local function awardRows(item)
+		local built = {}
+		for _, person in ipairs(roster) do
+			local cast = item.votes[person.name] or {}
+			local info = council[person.name]
+			built[#built + 1] = {
+				name = person.name,
+				class = person.classFile,
+				rank = info and info.rankName or "",
+				officerNote = info and info.officerNote or "",
+				response = cast.response,
+				slotIlvl = cast.slotIlvl,
+				diff = cast.diff,
+				note = cast.note,
+				s1 = cast.s1,
+				s2 = cast.s2,
+			}
+		end
+		return built
 	end
 	OL.History:Ensure("dev-demo", time())
 	local session = OL.db.history.sessions["dev-demo"]
-	session.awards = {
-		{
-			index = 7,
-			winner = "Veyra",
-			link = awardedRing.link,
-			response = "BIS",
-			time = time(),
-			rows = rows,
-		},
-	}
+	session.awards = {}
+	for index = 1, 20 do
+		local item = items[index]
+		local winner = item.awardedTo or roster[((index - 1) % #roster) + 1].name
+		local cast = item.votes[winner]
+		session.awards[index] = {
+			index = index,
+			winner = winner,
+			link = item.link,
+			response = cast and cast.response or "BIS",
+			time = time() - (index * 60),
+			rows = awardRows(item),
+		}
+	end
+	OL.History:Ensure("dev-demo-2", time() - 86400)
+	local older = OL.db.history.sessions["dev-demo-2"]
+	older.awards = {}
+	for index = 21, 24 do
+		local item = items[index]
+		local winner = roster[((index - 1) % #roster) + 1].name
+		older.awards[#older.awards + 1] = {
+			index = index,
+			winner = winner,
+			link = item.link,
+			response = "UPGRADE",
+			time = time() - 86400 - (index * 60),
+			rows = awardRows(item),
+		}
+	end
 
-	OL.Versions:Remember(me, OL:Version())
+	OL.Versions.known[me] = OL:Version()
 	OL.Versions.known.Veyra = OL:Version()
 	OL.Versions.known.Thorn = "0.1.0"
-	OL.Versions:Remember("Nyx", "0.3.0")
+	OL.Versions.known.Nyx = "0.3.0"
+	OL.Versions.known.Bramble = "0.1.0"
+	OL.Versions.known.Moss = OL:Version()
+	OL.Versions.known.Sable = nil
+	OL.Versions.known.Quarrel = nil
 	OL.Versions.waiting = false
 
 	OL.RaiderFrame:Show()
@@ -249,20 +302,18 @@ function Dev:Start()
 	OL.History.selected = "dev-demo"
 	OL.History.frame:Show()
 	OL.History:Refresh()
+	OL.Versions:Ensure()
+	OL.Versions.frame:Show()
+	OL.Versions:Refresh()
 
-	self:Place(OL.RaiderFrame.frame, "TOPLEFT", 24, -60)
-	self:Place(OL.CouncilFrame.frame, "TOPRIGHT", -24, -60)
-	self:Place(OL.Trade.frame, "BOTTOMLEFT", 24, 40)
-	self:Place(OL.History.frame, "BOTTOMRIGHT", -24, 40)
-
-	OL:Print("Dev mode on. Fake loot, trades, history, and versions are local only. /openloot dev off to clear.")
+	OL:Print("Demo on. Sample screens are local only. /openloot demo off to clear.")
 end
 
-function Dev:Slash(rest)
+function Dev:DemoSlash(rest)
 	local sub = (rest or ""):lower()
 	if sub == "off" or (sub == "" and OL.devMode) then
-		self:Stop()
+		self:StopDemo(false)
 		return
 	end
-	self:Start()
+	self:Demo()
 end

@@ -18,6 +18,7 @@ local defaults = {
 	activeRaid = nil,
 	declinedMap = nil,
 	passTouch = nil,
+	frames = {},
 }
 
 local function copyDefaults(dst, src)
@@ -205,8 +206,10 @@ function OL:Slash(message)
 		self.Versions:Toggle()
 	elseif cmd == "dev" then
 		self.Dev:Slash(rest)
+	elseif cmd == "demo" then
+		self.Dev:DemoSlash(rest)
 	else
-		self:Print("Commands: on, off, run, trade, v, h, dev")
+		self:Print("Commands: on, off, run, trade, v, h, dev, demo")
 	end
 end
 

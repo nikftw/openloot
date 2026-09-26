@@ -121,7 +121,7 @@ function Session:Start(items)
 end
 
 function Session:Run()
-	if not OL.devMode and not OL:IsLive() then
+	if not OL:IsLive() then
 		OL:Print("OpenLoot only runs inside a raid.")
 		return
 	end
@@ -311,7 +311,30 @@ function Session:Award(index, winner)
 	local channel = IsInRaid() and "RAID" or "PARTY"
 	pcall(SendChatMessage, OL:ShortName(shortWinner) .. " was awarded " .. item.link, channel)
 	OL.RaiderFrame:Refresh()
-	OL.CouncilFrame:Refresh()
+	OL.CouncilFrame:AdvanceFrom(index)
+end
+
+function Session:Close(index, reason)
+	local item = self.active and self.active.items[index]
+	if not item or item.awardedTo or item.closed or not (OL.Council:IsLocalCouncil() or OL.devMode) then
+		return
+	end
+	if reason ~= "skip" and reason ~= "disenchant" then
+		return
+	end
+	item.closed = reason
+	local label = reason == "disenchant" and "Disenchant" or "Skip"
+	OL.History:AddAward(self.active.id, {
+		index = index,
+		winner = label,
+		link = item.link,
+		response = reason,
+		time = time(),
+		rows = self:BuildRows(item),
+	})
+	OL.Comms:Send(join({ "close", self.active.id, index, reason }))
+	OL.RaiderFrame:Refresh()
+	OL.CouncilFrame:AdvanceFrom(index)
 end
 
 local function awardKey(id, index)
@@ -369,6 +392,27 @@ function Session:OnComm(sender, op, fields)
 		self:ApplyVote(fields[1], tonumber(fields[2]), sender, textOrNil(fields[3]), numberOrNil(fields[4]), numberOrNil(fields[5]), textOrNil(fields[6]), textOrNil(fields[7]), textOrNil(fields[8]))
 		return
 	end
+	if op == "close" then
+		local index = tonumber(fields[2])
+		local reason = fields[3]
+		if self.active and self.active.id == fields[1] and index and (reason == "skip" or reason == "disenchant") then
+			local item = self.active.items[index]
+			if item and not item.awardedTo and not item.closed then
+				item.closed = reason
+				OL.History:AddAward(fields[1], {
+					index = index,
+					winner = reason == "disenchant" and "Disenchant" or "Skip",
+					link = item.link,
+					response = reason,
+					time = time(),
+					rows = {},
+				})
+				OL.RaiderFrame:Refresh()
+				OL.CouncilFrame:AdvanceFrom(index)
+			end
+		end
+		return
+	end
 	if op == "award" then
 		local key = awardKey(fields[1], fields[2])
 		local pending = self.pendingAwards[key] or { rows = {} }
@@ -386,7 +430,7 @@ function Session:OnComm(sender, op, fields)
 				item.awardedTo = fields[3]
 				OL.Trade:Add(item, fields[3], fields[1], pending.header.index)
 				OL.RaiderFrame:Refresh()
-				OL.CouncilFrame:Refresh()
+				OL.CouncilFrame:AdvanceFrom(pending.header.index)
 			end
 		end
 		return

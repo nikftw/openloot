@@ -111,16 +111,16 @@ function Versions:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Versions", 440, 320)
+	local frame = OL.UI:CreateWindow("OpenLoot Versions", 272, 220)
 	self.frame = frame
-	self.header = frame.content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.header:SetPoint("TOPLEFT", 0, 0)
+	self.header = OL.UI:Text(frame.content, "OVERLAY", "GameFontDisableSmall")
+	self.header:SetPoint("TOPLEFT", 4, 0)
 	self.header:SetText("Name")
-	self.headerVersion = frame.content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.headerVersion:SetPoint("TOPRIGHT", 0, 0)
+	self.headerVersion = OL.UI:Text(frame.content, "OVERLAY", "GameFontDisableSmall")
+	self.headerVersion:SetPoint("TOPRIGHT", -4, 0)
 	self.headerVersion:SetText("Version")
 	self.scroll = OL.UI:CreateScroll(frame.content)
-	self.scroll:SetPoint("TOPLEFT", 0, -18)
+	self.scroll:SetPoint("TOPLEFT", 0, -20)
 	self.scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 end
 
@@ -138,7 +138,7 @@ function Versions:WhisperOne(member)
 		return
 	end
 	if OL.devMode then
-		OL:Print("Dev mode: would whisper " .. OL:ShortName(short) .. ": " .. text)
+		OL:Print("Demo: would whisper " .. OL:ShortName(short) .. ": " .. text)
 		return
 	end
 	if pcall(SendChatMessage, text, "WHISPER", nil, member.name) then
@@ -192,25 +192,31 @@ function Versions:Refresh()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 22
+		y = y + 24
 	end
 	for index = #roster + 1, #self.rows do
 		self.rows[index]:Hide()
 	end
 	self.scroll.content:SetHeight(math.max(1, y))
+	if not self.frame.collapsed then
+		local visible = math.min(math.max(#roster, 1), 12)
+		local height = 52 + visible * 24
+		self.frame:SetHeight(height)
+		self.frame.expandedHeight = height
+	end
 end
 
 function Versions:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent)
-	row:SetHeight(22)
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.name:SetPoint("LEFT", 0, 0)
+	row:SetHeight(24)
+	row.name = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.name:SetPoint("LEFT", 4, 0)
 	row.name:SetJustifyH("LEFT")
-	row.version = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.version:SetPoint("RIGHT", 0, 0)
+	row.version = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.version:SetPoint("RIGHT", -4, 0)
 	row.version:SetJustifyH("RIGHT")
 	row.whisper = OL.UI:FlatButton(row, "Whisper", 64, 16)
-	row.whisper:SetPoint("RIGHT", row.version, "LEFT", -6, 0)
+	row.whisper:SetPoint("RIGHT", row.version, "LEFT", -4, 0)
 	row.whisper:Hide()
 	return row
 end

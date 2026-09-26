@@ -33,16 +33,61 @@ function Council:Qualifies(rankIndex)
 	return self:OfficerChat(rankIndex)
 end
 
+function Council:RankName(rankIndex, fallback)
+	local order = type(rankIndex) == "number" and (rankIndex + 1) or nil
+	if order and C_GuildInfo and C_GuildInfo.GuildControlGetRankName then
+		local ok, name = pcall(C_GuildInfo.GuildControlGetRankName, order)
+		if ok and type(name) == "string" and name ~= "" then
+			return name
+		end
+	end
+	if order and GuildControlGetRankName then
+		local ok, name = pcall(GuildControlGetRankName, order)
+		if ok and type(name) == "string" and name ~= "" then
+			return name
+		end
+	end
+	if type(fallback) == "string" and fallback ~= "" then
+		return fallback
+	end
+	return ""
+end
+
 function Council:ReadMember(index)
-	local name, rankName, rankIndex, _, _, _, _, officerNote, isOnline = GetGuildRosterInfo(index)
+	local name, rankName, rankIndex, officerNote, isOnline
+	if C_GuildInfo and C_GuildInfo.GetGuildRosterInfo then
+		local ok, info = pcall(C_GuildInfo.GetGuildRosterInfo, index)
+		if ok and type(info) == "table" then
+			name = info.name
+			rankName = info.rankName
+			rankIndex = info.rank
+			officerNote = info.officerNote
+			if info.isOnline ~= nil then
+				isOnline = info.isOnline
+			else
+				isOnline = info.online
+			end
+		end
+	end
+	if not name and GetGuildRosterInfo then
+		name, rankName, rankIndex, _, _, _, _, officerNote, isOnline = GetGuildRosterInfo(index)
+	elseif GetGuildRosterInfo and (type(officerNote) ~= "string" or officerNote == "") then
+		local _, _, _, _, _, _, _, rosterNote = GetGuildRosterInfo(index)
+		if type(rosterNote) == "string" and rosterNote ~= "" then
+			officerNote = rosterNote
+		end
+	end
 	if not name or not isOnline then
 		return nil
 	end
+	if type(officerNote) ~= "string" then
+		officerNote = ""
+	end
 	return {
 		name = name,
-		rankName = rankName or "",
+		rankName = self:RankName(rankIndex, rankName),
 		rankIndex = rankIndex,
-		officerNote = officerNote or "",
+		officerNote = officerNote,
 		council = self:Qualifies(rankIndex),
 	}
 end

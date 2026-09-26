@@ -209,7 +209,7 @@ function Items:ItemLevel(link, location)
 	return nil
 end
 
-function Items:ScanBags()
+function Items:ScanBags(allItems)
 	local found = {}
 	local maxBag = NUM_BAG_SLOTS or 4
 	for bag = 0, maxBag do
@@ -219,32 +219,36 @@ function Items:ScanBags()
 			if C_Item.DoesItemExist(location) then
 				local link = C_Container.GetContainerItemLink(bag, slot)
 				local quality = C_Item.GetItemQuality(location)
-				if link and quality and quality >= MIN_QUALITY then
+				local take = false
+				if link and allItems then
+					take = true
+				elseif link and quality and quality >= MIN_QUALITY then
 					local bound = C_Item.IsBound(location)
-					if not bound or self:IsTradeable(bag, slot) then
-						local _, _, _, equipLoc, icon, classID, subClassID = C_Item.GetItemInfoInstant(link)
-						local guid
-						if C_Item.GetItemGUID then
-							local ok, value = pcall(C_Item.GetItemGUID, location)
-							if ok and type(value) == "string" and value ~= "" then
-								guid = value
-							end
+					take = not bound or self:IsTradeable(bag, slot)
+				end
+				if take then
+					local _, _, _, equipLoc, icon, classID, subClassID = C_Item.GetItemInfoInstant(link)
+					local guid
+					if C_Item.GetItemGUID then
+						local ok, value = pcall(C_Item.GetItemGUID, location)
+						if ok and type(value) == "string" and value ~= "" then
+							guid = value
 						end
-						found[#found + 1] = {
-							link = link,
-							ilvl = self:ItemLevel(link, location) or 0,
-							texture = icon,
-							equipLoc = equipLoc or "",
-							quality = quality,
-							classID = classID,
-							subClassID = subClassID,
-							bag = bag,
-							slot = slot,
-							guid = guid,
-							votes = {},
-							ballots = {},
-						}
 					end
+					found[#found + 1] = {
+						link = link,
+						ilvl = self:ItemLevel(link, location) or 0,
+						texture = icon,
+						equipLoc = equipLoc or "",
+						quality = quality,
+						classID = classID,
+						subClassID = subClassID,
+						bag = bag,
+						slot = slot,
+						guid = guid,
+						votes = {},
+						ballots = {},
+					}
 				end
 			end
 		end
@@ -294,6 +298,9 @@ function Items:Compare(lootLink, lootIlvl, equipLoc)
 	local diff
 	if lootIlvl and base then
 		diff = lootIlvl - base
+	end
+	if equipLoc ~= "INVTYPE_FINGER" and equipLoc ~= "INVTYPE_TRINKET" then
+		second = nil
 	end
 	return base, diff, first, second
 end

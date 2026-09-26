@@ -150,6 +150,7 @@ function Trade:Show()
 		return
 	end
 	self:Ensure()
+	self.frame:SetWidth(340)
 	self.frame:Show()
 	self:WatchRange(true)
 	self:Refresh()
@@ -178,7 +179,7 @@ function Trade:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Trades", 560, 320)
+	local frame = OL.UI:CreateWindow("OpenLoot Trades", 340, 202)
 	self.frame = frame
 	frame:SetScript("OnHide", function()
 		self:WatchRange(false)
@@ -201,8 +202,8 @@ function Trade:InRange(name)
 	if not name or name == "" then
 		return false
 	end
-	if OL.devMode then
-		return name == "Veyra"
+	if OL.devMode and name == "Veyra" then
+		return true
 	end
 	local unit = OL:GroupUnit(name)
 	if not unit or not CheckInteractDistance then
@@ -264,7 +265,7 @@ function Trade:Refresh()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 32
+		y = y + 34
 	end
 	for index = #self.list + 1, #self.rows do
 		self.rows[index]:Hide()
@@ -277,16 +278,17 @@ end
 
 function Trade:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(28)
+	row:SetHeight(30)
+	row:SetClipsChildren(true)
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
 	row.icon = OL.UI:Icon(row, 22)
-	row.icon:SetPoint("LEFT", 0, 0)
+	row.icon:SetPoint("LEFT", 4, 0)
 	row.icon:SetScript("OnLeave", function()
 		OL.UI:HideTip()
 	end)
 	row.remove = OL.UI:FlatButton(row, "X", 18, 18)
-	row.remove:SetPoint("RIGHT", 0, 0)
+	row.remove:SetPoint("RIGHT", -4, 0)
 	row.remove:SetScript("OnEnter", function(button)
 		GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
 		GameTooltip:SetText("Double-click to remove")
@@ -297,13 +299,13 @@ function Trade:CreateRow(parent)
 	end)
 	row.trade = OL.UI:FlatButton(row, "Trade", 64, 18)
 	row.trade:SetPoint("RIGHT", row.remove, "LEFT", -4, 0)
-	row.winner = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.winner:SetWidth(140)
+	row.winner = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.winner:SetWidth(72)
 	row.winner:SetJustifyH("RIGHT")
-	row.winner:SetPoint("RIGHT", row.trade, "LEFT", -8, 0)
-	row.link = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.link:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
-	row.link:SetPoint("RIGHT", row.winner, "LEFT", -6, 0)
+	row.winner:SetPoint("RIGHT", row.trade, "LEFT", -4, 0)
+	row.link = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.link:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
+	row.link:SetPoint("RIGHT", row.winner, "LEFT", -4, 0)
 	row.link:SetJustifyH("LEFT")
 	return row
 end
@@ -321,7 +323,7 @@ end
 
 function Trade:Start(entry)
 	if OL.devMode and not OL:GroupUnit(entry.winner) then
-		OL:Print("Dev mode: would trade " .. entry.link .. " to " .. OL:ShortName(entry.winner) .. ".")
+		OL:Print("Demo: would trade " .. entry.link .. " to " .. OL:ShortName(entry.winner) .. ".")
 		return
 	end
 	local unit = OL:GroupUnit(entry.winner)

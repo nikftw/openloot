@@ -17,7 +17,8 @@ The TOC targets interface `120100` (the 12.1 mainline API Forever shares). Forev
 - `/openloot run` start a session from the raid leader's bags
 - `/openloot trade` show the trades still owed by the loot holder
 - `/openloot v` version check for the group
-- `/openloot dev` temporary demo data. `/openloot dev off` clears it. Remove `Dev.lua` before a real release.
+- `/openloot dev` starts a test session from every item in your bags and sends it as loot. `/openloot dev off` clears it. Remove `Dev.lua` before a real release.
+- `/openloot demo` opens local sample screens for the raider, council, trades, history, and versions. `/openloot demo off` clears them.
 - `/openloot h` history
 
 ## Raid mode

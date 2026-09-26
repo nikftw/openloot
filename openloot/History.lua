@@ -43,7 +43,7 @@ function History:EnsureFrame()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot History", 640, 420)
+	local frame = OL.UI:CreateWindow("OpenLoot History", 640, 412)
 	self.frame = frame
 	self.sessionButtons = {}
 	self.awardRows = {}
@@ -51,9 +51,9 @@ function History:EnsureFrame()
 	self.sessionPane = CreateFrame("Frame", nil, frame.content)
 	self.sessionPane:SetPoint("TOPLEFT", 0, 0)
 	self.sessionPane:SetPoint("BOTTOMLEFT", 0, 0)
-	self.sessionPane:SetWidth(130)
+	self.sessionPane:SetWidth(128)
 
-	self.exportButton = OL.UI:FlatButton(self.sessionPane, "Export", 120, 22)
+	self.exportButton = OL.UI:FlatButton(self.sessionPane, "Export current", 128, 24)
 	self.exportButton:SetPoint("TOPLEFT", 0, 0)
 	self.exportButton:SetScript("OnClick", function()
 		self:ShowExport()
@@ -65,30 +65,35 @@ function History:EnsureFrame()
 	self.sessionScroll = sessionScroll
 
 	self.main = CreateFrame("Frame", nil, frame.content)
-	self.main:SetPoint("TOPLEFT", self.sessionPane, "TOPRIGHT", 8, 0)
+	self.main:SetPoint("TOPLEFT", self.sessionPane, "TOPRIGHT", 4, 0)
 	self.main:SetPoint("BOTTOMRIGHT", 0, 0)
 
-	self.headerName = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+	self.headerName = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
 	self.headerName:SetPoint("TOPLEFT", 4, 0)
-	self.headerName:SetWidth(150)
+	self.headerName:SetWidth(100)
 	self.headerName:SetJustifyH("LEFT")
+	self.headerName:SetWordWrap(false)
 	self.headerName:SetText("Name")
-	self.headerTime = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.headerTime:SetPoint("TOPLEFT", self.headerName, "TOPRIGHT", 8, 0)
-	self.headerTime:SetWidth(100)
-	self.headerTime:SetJustifyH("LEFT")
-	self.headerTime:SetText("Time")
-	self.headerItem = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.headerItem:SetPoint("TOPLEFT", self.headerTime, "TOPRIGHT", 8, 0)
+	self.headerItem = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
+	self.headerItem:SetPoint("TOPLEFT", 108, 0)
 	self.headerItem:SetJustifyH("LEFT")
+	self.headerItem:SetWordWrap(false)
 	self.headerItem:SetText("Item")
-	self.headerResponse = self.main:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-	self.headerResponse:SetPoint("TOPRIGHT", 0, 0)
+	self.headerTime = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
+	self.headerTime:SetPoint("TOPRIGHT", -4, 0)
+	self.headerTime:SetWidth(92)
+	self.headerTime:SetJustifyH("LEFT")
+	self.headerTime:SetWordWrap(false)
+	self.headerTime:SetText("Time")
+	self.headerResponse = OL.UI:Text(self.main, "OVERLAY", "GameFontDisableSmall")
+	self.headerResponse:SetPoint("TOPRIGHT", self.headerTime, "TOPLEFT", -4, 0)
+	self.headerResponse:SetWidth(76)
 	self.headerResponse:SetJustifyH("LEFT")
+	self.headerResponse:SetWordWrap(false)
 	self.headerResponse:SetText("Response")
 
 	local scroll = OL.UI:CreateScroll(self.main)
-	scroll:SetPoint("TOPLEFT", 0, -18)
+	scroll:SetPoint("TOPLEFT", 0, -20)
 	scroll:SetPoint("BOTTOMRIGHT", 0, 0)
 	self.scroll = scroll
 end
@@ -110,14 +115,14 @@ function History:CsvCell(text)
 end
 
 function History:Csv()
-	local lines = { "Name,Time,Item,Response" }
+	local lines = { "Name,Item,Response,Time" }
 	for _, entry in ipairs(self:VisibleAwards()) do
 		local award = entry.award
 		lines[#lines + 1] = table.concat({
 			self:CsvCell(OL:ShortName(award.winner or "")),
-			self:CsvCell(date("%d %b %H:%M", award.time or entry.session.time)),
 			self:CsvCell(self:ItemLabel(award.link)),
 			self:CsvCell(award.response and OL:ResponseText(award.response) or ""),
+			self:CsvCell(date("%d %b %H:%M", award.time or entry.session.time)),
 		}, ",")
 	end
 	return table.concat(lines, "\n")
@@ -134,6 +139,7 @@ function History:EnsureExport()
 	local box = CreateFrame("EditBox", nil, scroll.content)
 	box:SetMultiLine(true)
 	box:SetFontObject(GameFontHighlightSmall)
+	OL.UI:Face(box)
 	box:SetAutoFocus(false)
 	box:SetPoint("TOPLEFT", 0, 0)
 	box:SetWidth(490)
@@ -187,7 +193,7 @@ function History:Refresh()
 	for index, id in ipairs(order) do
 		local button = self.sessionButtons[index]
 		if not button then
-			button = OL.UI:FlatButton(self.sessionScroll.content, "", 120, 22)
+			button = OL.UI:FlatButton(self.sessionScroll.content, "", 128, 24)
 			self.sessionButtons[index] = button
 		end
 		local session = OL.db.history.sessions[id]
@@ -211,7 +217,7 @@ function History:Refresh()
 			button:ClearAllPoints()
 			button:SetPoint("TOPLEFT", self.sessionScroll.content, "TOPLEFT", 0, -y)
 			button:Show()
-			y = y + 26
+			y = y + 28
 		end
 	end
 	for index = #order + 1, #self.sessionButtons do
@@ -236,7 +242,6 @@ function History:Refresh()
 		row.name:SetText(OL:ShortName(award.winner or ""))
 		row.time:SetText(date("%d %b %H:%M", award.time or entry.session.time))
 		row.link:SetText(award.link or "")
-		row.linkHit:SetWidth(math.max(1, row.link:GetStringWidth()))
 		row.response:SetText(award.response and OL:ResponseText(award.response) or "")
 		row.linkHit:SetScript("OnEnter", function(selfHit)
 			OL.UI:ItemTip(selfHit, award.link)
@@ -245,7 +250,7 @@ function History:Refresh()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
 		row:Show()
-		y = y + 20
+		y = y + 24
 	end
 	for index = #awards + 1, #self.awardRows do
 		self.awardRows[index]:Hide()
@@ -255,28 +260,38 @@ end
 
 function History:CreateAwardRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-	row:SetHeight(18)
+	row:SetHeight(24)
+	row:SetClipsChildren(true)
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
-	row.name = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	row.name = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
 	row.name:SetPoint("LEFT", 4, 0)
-	row.name:SetWidth(150)
+	row.name:SetWidth(100)
 	row.name:SetJustifyH("LEFT")
-	row.time = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.time:SetPoint("LEFT", row.name, "RIGHT", 8, 0)
-	row.time:SetWidth(100)
+	row.name:SetWordWrap(false)
+	row.time = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.time:SetWidth(92)
+	row.time:SetPoint("RIGHT", -4, 0)
+	row.time:SetJustifyH("LEFT")
+	row.time:SetWordWrap(false)
+	row.response = OL.UI:Text(row, "OVERLAY", "GameFontHighlightSmall")
+	row.response:SetWidth(76)
+	row.response:SetPoint("RIGHT", row.time, "LEFT", -4, 0)
+	row.response:SetJustifyH("LEFT")
+	row.response:SetWordWrap(false)
 	row.icon = OL.UI:Icon(row, 16)
-	row.icon:SetPoint("LEFT", row.time, "RIGHT", 8, 0)
+	row.icon:SetPoint("LEFT", 108, 0)
 	row.icon:EnableMouse(false)
 	row.linkHit = CreateFrame("Button", nil, row)
 	row.linkHit:SetHeight(16)
+	row.linkHit:SetClipsChildren(true)
 	row.linkHit:SetPoint("LEFT", row.icon, "RIGHT", 4, 0)
-	row.link = row.linkHit:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.link:SetPoint("LEFT")
+	row.linkHit:SetPoint("RIGHT", row.response, "LEFT", -4, 0)
+	row.link = OL.UI:Text(row.linkHit, "OVERLAY", "GameFontHighlightSmall")
+	row.link:SetPoint("LEFT", 0, 0)
+	row.link:SetPoint("RIGHT", 0, 0)
 	row.link:SetJustifyH("LEFT")
-	row.response = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	row.response:SetPoint("LEFT", row.linkHit, "RIGHT", 8, 0)
-	row.response:SetJustifyH("LEFT")
+	row.link:SetWordWrap(false)
 	row.linkHit:SetScript("OnLeave", function()
 		OL.UI:HideTip()
 	end)

@@ -4,7 +4,43 @@ OL.UI = {}
 local UI = OL.UI
 
 UI.WHITE = "Interface\\Buttons\\WHITE8X8"
+UI.FONT = "Fonts\\ARIALN.ttf"
+UI.FONT_SIZE = 12
+
+function UI:Face(widget)
+	if not widget or not widget.SetFont then
+		return widget
+	end
+	pcall(widget.SetFont, widget, self.FONT, self.FONT_SIZE, "")
+	if widget.SetShadowOffset then
+		pcall(widget.SetShadowOffset, widget, 0, 0)
+	end
+	return widget
+end
+
+function UI:Text(parent, layer, template)
+	local text = parent:CreateFontString(nil, layer or "OVERLAY", template or "GameFontHighlightSmall")
+	return self:Face(text)
+end
 UI.ICON_CROP = { 0.08, 0.92, 0.08, 0.92 }
+UI.UNKNOWN_ICON = "Interface\\InventoryItems\\WoWUnknownItem01"
+UI.UNKNOWN_CROP = { 0.22, 0.78, 0.22, 0.78 }
+
+local function missingIcon(icon)
+	if not icon or icon == "" or icon == 0 or icon == "0" then
+		return true
+	end
+	if icon == 134400 or icon == 136235 then
+		return true
+	end
+	if type(icon) == "string" then
+		local lower = icon:lower()
+		if lower:find("questionmark", 1, true) or lower:find("wowunknownitem", 1, true) then
+			return true
+		end
+	end
+	return false
+end
 
 local function paint(frame, red, green, blue, alpha)
 	frame:SetBackdrop({ bgFile = UI.WHITE, edgeFile = UI.WHITE, edgeSize = 1 })
@@ -16,7 +52,7 @@ function UI:FlatButton(parent, text, width, height)
 	local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	button:SetSize(width or 64, height or 18)
 	paint(button, 0.16, 0.16, 0.18, 1)
-	local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	local label = self:Text(button, "OVERLAY", "GameFontHighlightSmall")
 	label:SetPoint("CENTER")
 	button:SetFontString(label)
 	button:SetText(text or "")
@@ -36,47 +72,46 @@ function UI:FlatButton(parent, text, width, height)
 	return button
 end
 
-function UI:CircleButton(parent, text, size)
-	local button = CreateFrame("Button", nil, parent)
-	button:SetSize(size or 16, size or 16)
-	local disc = button:CreateTexture(nil, "BACKGROUND")
-	disc:SetAllPoints()
-	disc:SetTexture(UI.WHITE)
-	disc:SetVertexColor(0.16, 0.16, 0.18, 1)
-	if disc.SetMask then
-		pcall(disc.SetMask, disc, "Interface\\CharacterFrame\\TempPortraitAlphaMask")
-	end
-	local label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	label:SetPoint("CENTER", 0, 1)
-	label:SetText(text or "")
-	button.label = label
-	button:SetScript("OnEnter", function(self)
-		if self:IsEnabled() then
-			disc:SetVertexColor(0.24, 0.24, 0.27, 1)
-		end
-	end)
-	button:SetScript("OnLeave", function()
-		disc:SetVertexColor(0.16, 0.16, 0.18, 1)
-	end)
-	return button
-end
-
 function UI:Icon(parent, size)
 	local holder = CreateFrame("Button", nil, parent, "BackdropTemplate")
 	holder:SetSize(size, size)
+	holder:SetFrameLevel((parent:GetFrameLevel() or 0) + 10)
+	holder:SetClipsChildren(true)
 	holder:SetBackdrop({ bgFile = UI.WHITE })
-	holder:SetBackdropColor(0, 0, 0, 0)
+	holder:SetBackdropColor(0, 0, 0, 1)
 	local texture = holder:CreateTexture(nil, "ARTWORK")
 	texture:SetAllPoints()
 	texture:SetTexCoord(unpack(self.ICON_CROP))
 	holder.texture = texture
+	function holder:ApplyCrop()
+		local crop = self.crop or UI.ICON_CROP
+		texture:SetTexCoord(crop[1], crop[2], crop[3], crop[4])
+	end
 	function holder:SetIcon(icon)
-		texture:SetTexture(icon or "Interface\\InventoryItems\\WoWUnknownItem01")
-		texture:SetTexCoord(unpack(UI.ICON_CROP))
+		local missing = missingIcon(icon)
+		self.crop = missing and UI.UNKNOWN_CROP or UI.ICON_CROP
+		if missing then
+			texture:SetTexture(UI.UNKNOWN_ICON)
+		else
+			texture:SetTexture(icon)
+		end
+		self:ApplyCrop()
+		if C_Timer and C_Timer.After then
+			C_Timer.After(0, function()
+				local shown = texture:GetTexture()
+				if missingIcon(shown) then
+					holder.crop = UI.UNKNOWN_CROP
+					if shown ~= UI.UNKNOWN_ICON then
+						texture:SetTexture(UI.UNKNOWN_ICON)
+					end
+				end
+				holder:ApplyCrop()
+			end)
+		end
 	end
 	function holder:SetEdge(red, green, blue)
 		holder:SetBackdrop({ bgFile = UI.WHITE, edgeFile = UI.WHITE, edgeSize = 1 })
-		holder:SetBackdropColor(0, 0, 0, 0)
+		holder:SetBackdropColor(0, 0, 0, 1)
 		holder:SetBackdropBorderColor(red, green, blue, 1)
 		texture:ClearAllPoints()
 		texture:SetPoint("TOPLEFT", 1, -1)
@@ -84,7 +119,7 @@ function UI:Icon(parent, size)
 	end
 	function holder:ClearEdge()
 		holder:SetBackdrop({ bgFile = UI.WHITE })
-		holder:SetBackdropColor(0, 0, 0, 0)
+		holder:SetBackdropColor(0, 0, 0, 1)
 		texture:ClearAllPoints()
 		texture:SetAllPoints()
 	end
@@ -93,6 +128,7 @@ end
 
 function UI:CreateScroll(parent)
 	local scroll = CreateFrame("ScrollFrame", nil, parent)
+	scroll:SetClipsChildren(true)
 	local child = CreateFrame("Frame", nil, scroll)
 	child:SetSize(100, 1)
 	scroll:SetScrollChild(child)
@@ -114,32 +150,118 @@ function UI:CreateScroll(parent)
 	return scroll
 end
 
-function UI:CreateWindow(title, width, height)
+local titleOrder = 0
+
+local function rememberPlace(frame)
+	if not OL.db or not frame.placeKey then
+		return
+	end
+	local left = frame:GetLeft()
+	local top = frame:GetTop()
+	local parentLeft = UIParent:GetLeft() or 0
+	local parentTop = UIParent:GetTop()
+	if not left or not top or not parentTop then
+		return
+	end
+	OL.db.frames = OL.db.frames or {}
+	OL.db.frames[frame.placeKey] = { x = left - parentLeft, y = top - parentTop }
+end
+
+local function pinTop(frame)
+	local left = frame:GetLeft()
+	local top = frame:GetTop()
+	local parentLeft = UIParent:GetLeft() or 0
+	local parentTop = UIParent:GetTop()
+	if not left or not top or not parentTop then
+		return
+	end
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left - parentLeft, top - parentTop)
+	rememberPlace(frame)
+end
+
+local function placeWindow(frame)
+	local saved = OL.db and OL.db.frames and frame.placeKey and OL.db.frames[frame.placeKey]
+	local x = 100
+	local y = -100
+	if saved and saved.x and saved.y then
+		x = saved.x
+		y = saved.y
+	end
+	frame:ClearAllPoints()
+	frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+end
+
+local function raiseWindow(frame)
+	titleOrder = titleOrder + 1
+	if titleOrder > 100 then
+		titleOrder = 1
+	end
+	frame:Raise()
+	if frame.titleBar then
+		frame.titleBar:SetFrameLevel(200 + titleOrder)
+	end
+	if frame.closeButton and frame.titleBar then
+		frame.closeButton:SetFrameLevel(frame.titleBar:GetFrameLevel() + 2)
+	end
+end
+
+function UI:CreateWindow(title, width, height, placeKey)
 	local frame = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
 	frame:SetSize(width, height)
-	frame:SetPoint("CENTER")
+	frame.placeKey = placeKey or title
 	frame:SetMovable(true)
 	frame:SetClampedToScreen(true)
-	frame:SetFrameStrata("MEDIUM")
+	frame:SetFrameStrata("DIALOG")
+	frame:SetFrameLevel(1)
+	frame:SetClipsChildren(true)
 	frame:EnableMouse(true)
-	paint(frame, 0.07, 0.07, 0.08, 0.96)
+	paint(frame, 0.07, 0.07, 0.08, 1)
+	frame:HookScript("OnShow", function(self)
+		self.titleBar:Show()
+		raiseWindow(self)
+	end)
+	frame:HookScript("OnHide", function(self)
+		self.titleBar:Hide()
+	end)
 	frame.expandedHeight = height
 
-	local titleBar = CreateFrame("Button", nil, frame, "BackdropTemplate")
-	titleBar:SetPoint("TOPLEFT", 0, 0)
-	titleBar:SetPoint("TOPRIGHT", 0, 0)
-	titleBar:SetHeight(22)
+	local titleBar = CreateFrame("Button", nil, UIParent, "BackdropTemplate")
+	titleBar:SetParent(UIParent)
+	titleBar:SetFrameStrata("FULLSCREEN")
+	titleBar:SetFrameLevel(200)
+	titleBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+	titleBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	titleBar:SetHeight(24)
 	paint(titleBar, 0.12, 0.12, 0.14, 1)
+	titleBar:Hide()
 	titleBar:RegisterForDrag("LeftButton")
 	titleBar:SetScript("OnMouseDown", function(self, button)
 		if button ~= "LeftButton" then
 			return
 		end
 		self.downX, self.downY = GetCursorPosition()
-		frame:StartMoving()
+		self.dragging = true
+		self.moved = false
+		raiseWindow(frame)
+	end)
+	titleBar:SetScript("OnUpdate", function(self)
+		if not self.dragging or self.moved then
+			return
+		end
+		local x, y = GetCursorPosition()
+		if self.downX and (math.abs(x - self.downX) > 4 or math.abs(y - self.downY) > 4) then
+			self.moved = true
+			frame:StartMoving()
+		end
 	end)
 	titleBar:SetScript("OnMouseUp", function(self, button)
-		frame:StopMovingOrSizing()
+		if self.moved then
+			frame:StopMovingOrSizing()
+			pinTop(frame)
+		end
+		self.dragging = false
+		self.moved = false
 		if button ~= "LeftButton" then
 			return
 		end
@@ -157,24 +279,28 @@ function UI:CreateWindow(title, width, height)
 		end
 	end)
 
-	local titleText = titleBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	titleText:SetPoint("LEFT", 8, 0)
+	local titleText = self:Text(titleBar, "OVERLAY", "GameFontHighlightSmall")
+	titleText:SetPoint("LEFT", 4, 0)
 	titleText:SetText(title)
 	frame.titleText = titleText
 
-	local close = self:FlatButton(titleBar, "X", 18, 16)
-	close:SetPoint("RIGHT", -3, 0)
+	local close = self:FlatButton(titleBar, "X", 16, 16)
+	close:SetFrameStrata("FULLSCREEN")
+	close:SetFrameLevel(titleBar:GetFrameLevel() + 2)
+	close:SetPoint("RIGHT", -4, 0)
+	frame.closeButton = close
 	close:SetScript("OnClick", function()
 		frame:Hide()
 	end)
 
 	local content = CreateFrame("Frame", nil, frame)
-	content:SetPoint("TOPLEFT", 8, -30)
-	content:SetPoint("BOTTOMRIGHT", -8, 8)
+	content:SetPoint("TOPLEFT", 4, -28)
+	content:SetPoint("BOTTOMRIGHT", -4, 4)
 	frame.content = content
 	frame.titleBar = titleBar
 
 	function frame:ToggleCollapse()
+		pinTop(self)
 		if self.collapsed then
 			self.collapsed = false
 			self.content:Show()
@@ -187,6 +313,7 @@ function UI:CreateWindow(title, width, height)
 		end
 	end
 
+	placeWindow(frame)
 	frame:Hide()
 	return frame
 end
@@ -196,9 +323,12 @@ local promptQueue = {}
 
 local function showPrompt(title, body, buttons)
 	if not prompt then
-		prompt = UI:CreateWindow("OpenLoot", 420, 120)
-		prompt:SetFrameStrata("DIALOG")
-		prompt.body = prompt.content:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+		prompt = UI:CreateWindow("OpenLoot", 420, 120, "OpenLoot Prompt")
+		prompt:SetFrameStrata("FULLSCREEN_DIALOG")
+		prompt.titleBar:SetFrameStrata("FULLSCREEN_DIALOG")
+		prompt.closeButton:SetFrameStrata("FULLSCREEN_DIALOG")
+		prompt:SetFrameLevel(20)
+		prompt.body = UI:Text(prompt.content, "OVERLAY", "GameFontHighlight")
 		prompt.body:SetPoint("TOPLEFT", 0, 0)
 		prompt.body:SetPoint("TOPRIGHT", 0, 0)
 		prompt.body:SetJustifyH("LEFT")
@@ -232,7 +362,7 @@ local function showPrompt(title, body, buttons)
 		if not previous then
 			button:SetPoint("BOTTOMLEFT", prompt.content, "BOTTOMLEFT", 0, 0)
 		else
-			button:SetPoint("LEFT", previous, "RIGHT", 8, 0)
+			button:SetPoint("LEFT", previous, "RIGHT", 4, 0)
 		end
 		button:Show()
 		previous = button
