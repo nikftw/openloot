@@ -343,9 +343,6 @@ function Raid:OnLootRoll(rollID)
 end
 
 function Raid:Dismiss(which, confirm, a, b)
-	if not self:IsCollector() then
-		return
-	end
 	local function go()
 		if confirm then
 			pcall(confirm, a, b)
@@ -361,13 +358,16 @@ function Raid:Dismiss(which, confirm, a, b)
 end
 
 function Raid:SkipRollConfirm(rollID, rollType)
-	if not rollID then
+	if not self:IsCollector() or not rollID then
 		return
 	end
 	self:Dismiss("CONFIRM_LOOT_ROLL", ConfirmLootRoll, rollID, rollType)
 end
 
 function Raid:SkipLootConfirm(slot)
+	if not self:IsCollector() and not self:IsMasterLooter() then
+		return
+	end
 	self:Dismiss("CONFIRM_LOOT_DISTRIBUTION", slot and ConfirmLootSlot or nil, slot)
 end
 
@@ -499,6 +499,7 @@ function Raid:OnMasterLoot()
 			local index = self:CandidateIndex(slot, target)
 			if index and pcall(GiveMasterLoot, slot, index) then
 				given = given + 1
+				self:SkipLootConfirm(slot)
 			else
 				missed = true
 			end
@@ -548,7 +549,9 @@ function Raid:OnComm(sender, op, fields)
 		end
 	else
 		OL.db.activeRaid = nil
+		self.collecting = false
 		self:SyncRollListen()
+		self:SyncMasterListen()
 		self:RestorePass()
 		if wasOn then
 			OL:Print("OpenLoot is off. Pass on Loot was restored.")

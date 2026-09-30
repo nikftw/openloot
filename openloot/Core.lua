@@ -3,6 +3,7 @@ local ADDON = "openloot"
 OpenLoot = OpenLoot or {}
 local OL = OpenLoot
 local events
+local listening = {}
 
 OL.PREFIX = "OpenLoot"
 OL.RESPONSES = {
@@ -82,7 +83,7 @@ function OL:Version()
 	elseif GetAddOnMetadata then
 		version = GetAddOnMetadata(ADDON, "Version")
 	end
-	return version or "0.4.0"
+	return version or "0.4.1"
 end
 
 function OL:CompareVersion(left, right)
@@ -153,9 +154,15 @@ end
 
 function OL:Listen(eventName, enabled)
 	if enabled then
-		events:RegisterEvent(eventName)
-	else
-		events:UnregisterEvent(eventName)
+		if listening[eventName] then
+			return
+		end
+		if pcall(events.RegisterEvent, events, eventName) then
+			listening[eventName] = true
+		end
+	elseif listening[eventName] then
+		listening[eventName] = nil
+		pcall(events.UnregisterEvent, events, eventName)
 	end
 end
 
@@ -313,7 +320,7 @@ local quietEvents = {
 }
 for eventName in pairs(handlers) do
 	if not quietEvents[eventName] then
-		events:RegisterEvent(eventName)
+		OL:Listen(eventName, true)
 	end
 end
 events:SetScript("OnEvent", function(_, eventName, ...)

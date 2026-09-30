@@ -62,36 +62,38 @@ function Trade:EnsureEvents()
 	end)
 end
 
-function Trade:WatchInfo(on)
-	if not self.events then
-		return
-	end
-	if on then
-		if self.infoTimer then
-			self.infoTimer:Cancel()
-			self.infoTimer = nil
+function Trade:Listen(eventName, enabled)
+	self.registered = self.registered or {}
+	if enabled then
+		if self.registered[eventName] then
+			return
 		end
-		self.events:RegisterEvent("UI_INFO_MESSAGE")
-		return
+		self:EnsureEvents()
+		if pcall(self.events.RegisterEvent, self.events, eventName) then
+			self.registered[eventName] = true
+		end
+	elseif self.registered[eventName] then
+		self.registered[eventName] = nil
+		pcall(self.events.UnregisterEvent, self.events, eventName)
 	end
-	self.events:UnregisterEvent("UI_INFO_MESSAGE")
+end
+
+function Trade:WatchInfo(on)
+	if on and self.infoTimer then
+		self.infoTimer:Cancel()
+		self.infoTimer = nil
+	end
+	self:Listen("UI_INFO_MESSAGE", on)
 end
 
 function Trade:SyncListen()
 	local watch = self.list and #self.list > 0
+	self:Listen("TRADE_SHOW", watch)
+	self:Listen("TRADE_CLOSED", watch)
+	self:Listen("TRADE_ACCEPT_UPDATE", watch)
 	if not watch then
-		if self.events then
-			self.events:UnregisterEvent("TRADE_SHOW")
-			self.events:UnregisterEvent("TRADE_CLOSED")
-			self.events:UnregisterEvent("TRADE_ACCEPT_UPDATE")
-			self:WatchInfo(false)
-		end
-		return
+		self:Listen("UI_INFO_MESSAGE", false)
 	end
-	self:EnsureEvents()
-	self.events:RegisterEvent("TRADE_SHOW")
-	self.events:RegisterEvent("TRADE_CLOSED")
-	self.events:RegisterEvent("TRADE_ACCEPT_UPDATE")
 end
 
 function Trade:Save()
