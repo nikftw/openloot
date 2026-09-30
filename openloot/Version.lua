@@ -111,7 +111,7 @@ function Versions:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Versions", 272, 30)
+	local frame = OL.UI:CreateWindow("OpenLoot Versions", 310, 30)
 	self.frame = frame
 	OL:WatchWindow(frame, "versions")
 	local clip = CreateFrame("Frame", nil, frame.content)
@@ -156,10 +156,6 @@ function Versions:WhisperOne(member)
 		text = "Please update OpenLoot to " .. current .. ". You are on " .. version .. "."
 	end
 	if not text then
-		return
-	end
-	if OL.devMode then
-		OL:Print("Demo: would whisper " .. OL:ShortName(short) .. ": " .. text)
 		return
 	end
 	if pcall(SendChatMessage, text, "WHISPER", nil, member.name) then
@@ -256,7 +252,7 @@ function Versions:Refresh()
 		local height = OL.UI:FitHeight(OL.UI:Snap(rowH * shown))
 		self.frame:SetHeight(height)
 		self.frame.expandedHeight = height
-		self.frame:SetWidth(272)
+		self.frame:SetWidth(OL.UI:Snap(310))
 	end
 end
 

@@ -99,8 +99,13 @@ function Trade:Save()
 	self:SyncListen()
 end
 
+function Trade:Holds(item)
+	local holder = item and item.holder and OL:ShortName(item.holder) or ""
+	return holder ~= "" and holder == OL:ShortName(OL:FullName("player"))
+end
+
 function Trade:Add(item, winner, sessionId, index)
-	if not item or not OL.Session:IsHolder() then
+	if not item or not self:Holds(item) then
 		return
 	end
 	local short = OL:ShortName(winner)
@@ -151,7 +156,7 @@ function Trade:Show()
 	end
 	self:Ensure()
 	if not self.frame.userSized then
-		self.frame:SetWidth(340)
+		self.frame:SetWidth(OL.UI:Snap(310))
 	end
 	self.frame:Show()
 	self:WatchRange(true)
@@ -181,7 +186,7 @@ function Trade:Ensure()
 	if self.frame then
 		return
 	end
-	local frame = OL.UI:CreateWindow("OpenLoot Trades", 340, 200)
+	local frame = OL.UI:CreateWindow("OpenLoot Trades", 310, 200)
 	self.frame = frame
 	OL:WatchWindow(frame, "trade")
 	frame:HookScript("OnHide", function()
@@ -204,9 +209,6 @@ end
 function Trade:InRange(name)
 	if not name or name == "" then
 		return false
-	end
-	if OL.devMode and name == "Veyra" then
-		return true
 	end
 	local unit = OL:GroupUnit(name)
 	if not unit or not CheckInteractDistance then
@@ -277,11 +279,13 @@ function Trade:Refresh()
 	end
 	self.scroll.content:SetHeight(math.max(1, y))
 	if not self.frame.collapsed and not self.frame.gripSized then
-		local count = math.max(#self.list, 1)
-		local contentH = count > 4 and (4 * stride + rowH * 0.5) or ((count - 1) * stride + rowH)
+		local contentH = 4 * stride + rowH * 0.5
 		local height = OL.UI:FitHeight(contentH)
 		self.frame:SetHeight(height)
 		self.frame.expandedHeight = height
+		if not self.frame.userSized then
+			self.frame:SetWidth(OL.UI:Snap(310))
+		end
 	end
 	if #self.list == 0 then
 		self.frame:Hide()
@@ -334,10 +338,6 @@ function Trade:Remove(key)
 end
 
 function Trade:Start(entry)
-	if OL.devMode and not OL:GroupUnit(entry.winner) then
-		OL:Print("Demo: would trade " .. entry.link .. " to " .. OL:ShortName(entry.winner) .. ".")
-		return
-	end
 	local unit = OL:GroupUnit(entry.winner)
 	if not unit then
 		OL:Print(OL:ShortName(entry.winner) .. " is not in the group.")

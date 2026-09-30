@@ -82,7 +82,7 @@ function OL:Version()
 	elseif GetAddOnMetadata then
 		version = GetAddOnMetadata(ADDON, "Version")
 	end
-	return version or "0.3.0"
+	return version or "0.4.0"
 end
 
 function OL:CompareVersion(left, right)
@@ -176,6 +176,10 @@ function OL:Sleep()
 	end
 	self.awake = false
 	self:Listen("START_LOOT_ROLL", false)
+	self:Listen("CONFIRM_LOOT_ROLL", false)
+	self:Listen("LOOT_OPENED", false)
+	self:Listen("LOOT_READY", false)
+	self:Listen("CONFIRM_LOOT_DISTRIBUTION", false)
 end
 
 function OL:SyncPresence(isReload, askSession)
@@ -195,7 +199,7 @@ function OL:InitDB()
 end
 
 function OL:Slash(message)
-	local cmd, rest = message:match("^(%S*)%s*(.-)$")
+	local cmd = message:match("^(%S*)")
 	cmd = (cmd or ""):lower()
 	if cmd == "run" then
 		self.Session:Run()
@@ -205,12 +209,13 @@ function OL:Slash(message)
 		self.Trade:Show()
 	elseif cmd == "v" or cmd == "version" then
 		self.Versions:Toggle()
-	elseif cmd == "demo" then
-		self.Demo:DemoSlash(rest)
 	elseif cmd == "resize" then
 		self.UI:ToggleResize()
+	elseif cmd == "mule" then
+		local name = message:match("^%S+%s+(.+)$")
+		self.RaidMode:SetMule(name)
 	else
-		self:Print("Commands: run, trade, v, h, resize, demo")
+		self:Print("Commands: run, trade, v, h, resize, mule")
 	end
 end
 
@@ -221,7 +226,6 @@ function handlers.ADDON_LOADED(name)
 		return
 	end
 	OL:InitDB()
-	OL.Demo:ScrubSaved()
 	OL.Comms:Init()
 	OL.Council:Init()
 	OL.RaidMode:Init()
@@ -263,6 +267,36 @@ function handlers.START_LOOT_ROLL(rollID)
 	end
 end
 
+function handlers.CONFIRM_LOOT_ROLL(rollID, rollType)
+	if OL.ready then
+		OL.RaidMode:SkipRollConfirm(rollID, rollType)
+	end
+end
+
+function handlers.GROUP_ROSTER_UPDATE()
+	if OL.ready then
+		OL.RaidMode:OnRoster()
+	end
+end
+
+function handlers.LOOT_OPENED()
+	if OL.ready then
+		OL.RaidMode:OnMasterLoot()
+	end
+end
+
+function handlers.LOOT_READY()
+	if OL.ready then
+		OL.RaidMode:OnMasterLoot()
+	end
+end
+
+function handlers.CONFIRM_LOOT_DISTRIBUTION(slot)
+	if OL.ready then
+		OL.RaidMode:SkipLootConfirm(slot)
+	end
+end
+
 function handlers.CHAT_MSG_ADDON(prefix, message, _, sender)
 	if OL.ready and prefix == OL.PREFIX then
 		OL.Comms:OnMessage(sender, message)
@@ -272,6 +306,10 @@ end
 events = CreateFrame("Frame")
 local quietEvents = {
 	START_LOOT_ROLL = true,
+	CONFIRM_LOOT_ROLL = true,
+	LOOT_OPENED = true,
+	LOOT_READY = true,
+	CONFIRM_LOOT_DISTRIBUTION = true,
 }
 for eventName in pairs(handlers) do
 	if not quietEvents[eventName] then

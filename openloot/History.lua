@@ -22,6 +22,72 @@ function History:Ensure(id, when)
 	return entry
 end
 
+function History:Find(sessionId, index)
+	local session = OL.db.history and OL.db.history.sessions[sessionId]
+	if not session then
+		return nil
+	end
+	for _, award in ipairs(session.awards) do
+		if award.index == index then
+			return award
+		end
+	end
+	return nil
+end
+
+function History:ItemParts(link)
+	local itemString = type(link) == "string" and link:match("(item:[%-?%d:]+)") or ""
+	local itemID = itemString:match("^item:(%d+)") or ""
+	return itemString, itemID
+end
+
+function History:Record(id, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
+	return {
+		index = index,
+		id = id,
+		winner = winner or "",
+		link = link or "",
+		response = response or "",
+		time = when or time(),
+		votes = votes,
+		class = class or "",
+		instance = instance or "",
+		mapID = mapID or "",
+		gear1 = gear1 or "",
+		gear2 = gear2 or "",
+		note = note or "",
+	}
+end
+
+function History:Capture(sessionId, index, item, winner, response, when)
+	local link = item and item.link or ""
+	local short = OL:ShortName(winner)
+	local vote = item and item.votes and item.votes[short]
+	local votes = 0
+	if item and item.ballots then
+		for _, choice in pairs(item.ballots) do
+			if choice == short then
+				votes = votes + 1
+			end
+		end
+	end
+	local classFile = ""
+	if OL.Session and OL.Session.Roster then
+		for _, member in ipairs(OL.Session:Roster()) do
+			if OL:ShortName(member.name) == short then
+				classFile = member.classFile or ""
+				break
+			end
+		end
+	end
+	local instance, _, _, _, _, _, _, map = GetInstanceInfo()
+	return self:Record(sessionId, index, short, link, response, when, classFile, votes, instance, map, vote and vote.s1, vote and vote.s2, vote and vote.note)
+end
+
+function History:FromWire(sessionId, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
+	return self:Record(sessionId, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
+end
+
 function History:AddAward(sessionId, award)
 	local session = self:Ensure(sessionId, award.time)
 	for _, existing in ipairs(session.awards) do
@@ -127,14 +193,29 @@ function History:CsvCell(text)
 end
 
 function History:Csv()
-	local lines = { "Name,Item,Response,Time" }
+	local lines = { "player,date,time,id,item,itemID,itemString,response,votes,class,instance,mapID,gear1,gear2,note" }
 	for _, entry in ipairs(self:VisibleAwards()) do
 		local award = entry.award
+		local session = entry.session
+		local when = award.time or session.time
+		local link = award.link or ""
+		local itemString, itemID = self:ItemParts(link)
 		lines[#lines + 1] = table.concat({
 			self:CsvCell(OL:ShortName(award.winner or "")),
-			self:CsvCell(self:ItemLabel(award.link)),
+			self:CsvCell(when and date("%Y-%m-%d", when) or ""),
+			self:CsvCell(when and date("%H:%M:%S", when) or ""),
+			self:CsvCell(award.id or session.id or ""),
+			self:CsvCell(link),
+			self:CsvCell(itemID or ""),
+			self:CsvCell(itemString or ""),
 			self:CsvCell(award.response and OL:ResponseText(award.response) or ""),
-			self:CsvCell(date("%d %b %H:%M", award.time or entry.session.time)),
+			self:CsvCell(award.votes ~= nil and tostring(award.votes) or ""),
+			self:CsvCell(award.class or ""),
+			self:CsvCell(award.instance or ""),
+			self:CsvCell(award.mapID ~= nil and award.mapID ~= "" and tostring(award.mapID) or ""),
+			self:CsvCell(award.gear1 or ""),
+			self:CsvCell(award.gear2 or ""),
+			self:CsvCell(award.note or ""),
 		}, ",")
 	end
 	return table.concat(lines, "\n")

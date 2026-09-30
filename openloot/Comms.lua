@@ -135,9 +135,6 @@ function Comms:Enqueue(payload)
 end
 
 function Comms:Send(payload)
-	if OL.devMode then
-		return
-	end
 	local queued
 	if #payload <= MAX_PART then
 		queued = self:Enqueue(payload)
@@ -270,7 +267,7 @@ function OL:OnComm(sender, op, fields)
 		self.Versions:OnComm(sender, op, fields)
 	elseif op == "syncq" then
 		self.Session:OnSyncRequest()
-	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" or op == "end" or op == "sync" or op == "keep" or op == "kept" or op == "mark" then
+	elseif op == "begin" or op == "item" or op == "vend" or op == "vote" or op == "ballot" or op == "award" or op == "close" or op == "end" or op == "sync" or op == "keep" or op == "kept" or op == "mark" or op == "scanq" or op == "scan" or op == "scandone" then
 		self.Session:OnComm(sender, op, fields)
 	end
 end

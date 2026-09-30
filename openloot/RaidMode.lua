@@ -44,11 +44,6 @@ function Raid:ApplyRaiderPass()
 	self:SetPass(true)
 end
 
-function Raid:ArmRunner()
-	self:RememberPass()
-	self:SetPass(false)
-end
-
 function Raid:RestorePass()
 	if OL.db.passTouch then
 		self:SetPass(OL.db.passTouch.previous and true or false)
@@ -61,13 +56,62 @@ function Raid:IsRunner()
 	return raid and raid.on and raid.isRunner or false
 end
 
+function Raid:MuleName()
+	local raid = OL.db.activeRaid
+	local name = raid and raid.mule
+	if not name or name == "" then
+		return nil
+	end
+	return name
+end
+
+function Raid:IsMule()
+	local mule = self:MuleName()
+	return mule ~= nil and OL:ShortName(mule) == OL:ShortName(OL:FullName("player"))
+end
+
+function Raid:IsCollector()
+	if not self:IsOn() then
+		return false
+	end
+	if self:MuleName() then
+		return self:IsMule()
+	end
+	return self:IsRunner()
+end
+
 function Raid:IsOn()
 	local raid = OL.db.activeRaid
 	return raid and raid.on or false
 end
 
 function Raid:SyncRollListen()
-	OL:Listen("START_LOOT_ROLL", self:IsRunner() and true or false)
+	local on = self:IsCollector() and true or false
+	OL:Listen("START_LOOT_ROLL", on)
+	OL:Listen("CONFIRM_LOOT_ROLL", on)
+end
+
+function Raid:SyncMasterListen()
+	local on = self:IsOn() and true or false
+	OL:Listen("LOOT_OPENED", on)
+	OL:Listen("LOOT_READY", on)
+	OL:Listen("CONFIRM_LOOT_DISTRIBUTION", self:IsCollector() and true or false)
+end
+
+function Raid:ApplyLootRole()
+	local collect = self:IsCollector()
+	self.collecting = collect
+	self:SyncRollListen()
+	self:SyncMasterListen()
+	if not self:IsOn() then
+		return
+	end
+	if collect then
+		self:RememberPass()
+		self:SetPass(false)
+	else
+		self:ApplyRaiderPass()
+	end
 end
 
 function Raid:LeaderName()
@@ -98,8 +142,9 @@ end
 
 function Raid:Broadcast(on)
 	local leader = self:LeaderName() or OL:FullName("player")
+	local mule = self:MuleName() or ""
 	if on then
-		OL.Comms:Send("state\0311\031" .. leader)
+		OL.Comms:Send("state\0311\031" .. leader .. "\031" .. mule)
 	else
 		OL.Comms:Send("state\0310\031" .. leader)
 	end
@@ -108,8 +153,7 @@ end
 function Raid:Enable()
 	OL.db.declinedMap = nil
 	OL.db.activeRaid = { on = true, mapID = mapID(), isRunner = true }
-	self:SyncRollListen()
-	self:ArmRunner()
+	self:ApplyLootRole()
 	self:Broadcast(true)
 	OL.Versions:Query(true)
 	OL:Print("OpenLoot is on. You will automatically need on loot.")
@@ -118,12 +162,62 @@ end
 function Raid:Disable()
 	local wasRunner = self:IsRunner()
 	OL.db.activeRaid = nil
+	self.collecting = false
 	self:SyncRollListen()
+	self:SyncMasterListen()
 	self:RestorePass()
 	if wasRunner then
 		self:Broadcast(false)
 	end
 	OL:Print("OpenLoot is off for this raid.")
+end
+
+function Raid:SetMule(text)
+	if not self:IsRunner() then
+		OL:Print("Only the raid leader running OpenLoot can set the pack mule.")
+		return
+	end
+	local token = text and text:match("^(%S+)") or nil
+	local mule = nil
+	if token then
+		mule = OL:ShortName(token)
+		if mule == "" then
+			mule = token
+		end
+	end
+	local raid = OL.db.activeRaid
+	raid.mule = mule
+	raid.muleSeen = mule and OL:GroupUnit(mule) and true or nil
+	self:ApplyLootRole()
+	self:Broadcast(true)
+	if mule then
+		OL:Print(mule .. " is the pack mule and will take the loot.")
+	else
+		OL:Print("Pack mule cleared. You will take the loot.")
+	end
+end
+
+function Raid:OnRoster()
+	if not self:IsRunner() then
+		return
+	end
+	local raid = OL.db.activeRaid
+	local mule = raid and raid.mule
+	if not mule then
+		return
+	end
+	if OL:GroupUnit(mule) then
+		raid.muleSeen = true
+		return
+	end
+	if not raid.muleSeen then
+		return
+	end
+	raid.mule = nil
+	raid.muleSeen = nil
+	self:ApplyLootRole()
+	self:Broadcast(true)
+	OL:Print(OL:ShortName(mule) .. " left the raid. You will take the loot.")
 end
 
 function Raid:ConsiderPrompt()
@@ -197,12 +291,14 @@ function Raid:RestoreIfSaved(isReload, map)
 	map = map or mapID()
 	if raid.mapID and raid.mapID ~= map then
 		OL.db.activeRaid = nil
+		self.collecting = false
 		self:SyncRollListen()
+		self:SyncMasterListen()
 		self:RestorePass()
 		return
 	end
+	self:ApplyLootRole()
 	if raid.isRunner and UnitIsGroupLeader("player") then
-		self:ArmRunner()
 		local shouldPush = self.restoredMap ~= map
 		if isReload and not self.reloadPushed then
 			shouldPush = true
@@ -230,7 +326,9 @@ function Raid:OnGroupLeft()
 	self.promptOpen = false
 	OL.Comms:Clear()
 	OL.db.activeRaid = nil
+	self.collecting = false
 	self:SyncRollListen()
+	self:SyncMasterListen()
 	self:RestorePass()
 	if OL.Session then
 		OL.Session:Clear()
@@ -238,19 +336,181 @@ function Raid:OnGroupLeft()
 end
 
 function Raid:OnLootRoll(rollID)
-	if not self:IsRunner() or not rollID then
+	if not self:IsCollector() or not rollID then
 		return
 	end
-	pcall(function()
-		local _, _, _, _, _, canNeed = GetLootRollItemInfo(rollID)
-		local rollType = canNeed and 1 or 2
-		RollOnLoot(rollID, rollType)
-		if ConfirmLootRoll then
-			C_Timer.After(0, function()
-				pcall(ConfirmLootRoll, rollID, rollType)
-			end)
+	pcall(RollOnLoot, rollID, LOOT_ROLL_TYPE_NEED or 1)
+end
+
+function Raid:Dismiss(which, confirm, a, b)
+	if not self:IsCollector() then
+		return
+	end
+	local function go()
+		if confirm then
+			pcall(confirm, a, b)
 		end
-	end)
+		if StaticPopup_Hide then
+			StaticPopup_Hide(which)
+		end
+	end
+	go()
+	if C_Timer and C_Timer.After then
+		C_Timer.After(0, go)
+	end
+end
+
+function Raid:SkipRollConfirm(rollID, rollType)
+	if not rollID then
+		return
+	end
+	self:Dismiss("CONFIRM_LOOT_ROLL", ConfirmLootRoll, rollID, rollType)
+end
+
+function Raid:SkipLootConfirm(slot)
+	self:Dismiss("CONFIRM_LOOT_DISTRIBUTION", slot and ConfirmLootSlot or nil, slot)
+end
+
+function Raid:LootMethod()
+	if C_PartyInfo and C_PartyInfo.GetLootMethod then
+		local ok, method, partyID, raidID = pcall(C_PartyInfo.GetLootMethod)
+		if ok then
+			return method, partyID, raidID
+		end
+	end
+	if GetLootMethod then
+		local ok, method, partyID, raidID = pcall(GetLootMethod)
+		if ok then
+			return method, partyID, raidID
+		end
+	end
+	return nil
+end
+
+function Raid:IsMasterMethod(method)
+	if method == "master" or method == 2 then
+		return true
+	end
+	return Enum and Enum.LootMethod and method == Enum.LootMethod.Masterlooter or false
+end
+
+function Raid:IsMasterLooter()
+	local method, partyID, raidID = self:LootMethod()
+	if not self:IsMasterMethod(method) then
+		return false
+	end
+	local mine = OL:ShortName(OL:FullName("player"))
+	if IsInRaid() and raidID and raidID > 0 then
+		local name = GetRaidRosterInfo(raidID)
+		return name and OL:ShortName(name) == mine or false
+	end
+	if partyID == 0 then
+		return true
+	end
+	if partyID and partyID > 0 then
+		local unit = "party" .. partyID
+		return UnitExists(unit) and OL:ShortName(OL:FullName(unit)) == mine or false
+	end
+	return false
+end
+
+function Raid:LootTarget()
+	local mule = self:MuleName()
+	if mule then
+		return OL:ShortName(mule)
+	end
+	local leader = self:LeaderName()
+	return leader and OL:ShortName(leader) or nil
+end
+
+function Raid:CandidateName(slot, index)
+	if not GetMasterLootCandidate then
+		return nil
+	end
+	local ok, name = pcall(GetMasterLootCandidate, slot, index)
+	if ok and type(name) == "string" and name ~= "" then
+		return name
+	end
+	ok, name = pcall(GetMasterLootCandidate, index)
+	if ok and type(name) == "string" and name ~= "" then
+		return name
+	end
+	return nil
+end
+
+function Raid:CandidateIndex(slot, target)
+	local short = OL:ShortName(target)
+	if short == "" then
+		return nil
+	end
+	for index = 1, 40 do
+		local name = self:CandidateName(slot, index)
+		if not name then
+			return nil
+		end
+		if OL:ShortName(name) == short then
+			return index
+		end
+	end
+	return nil
+end
+
+function Raid:IsLootItem(slot)
+	if GetLootSlotType then
+		local ok, kind = pcall(GetLootSlotType, slot)
+		if ok and kind ~= nil then
+			if kind == 2 or kind == 3 or kind == LOOT_SLOT_MONEY or kind == LOOT_SLOT_CURRENCY then
+				return false
+			end
+			if kind == 1 or kind == LOOT_SLOT_ITEM then
+				return true
+			end
+		end
+	end
+	if LootSlotHasItem then
+		local ok, has = pcall(LootSlotHasItem, slot)
+		return ok and has or false
+	end
+	return false
+end
+
+function Raid:OnMasterLoot()
+	if not self:IsOn() or not self:IsMasterLooter() or not GiveMasterLoot then
+		return
+	end
+	local now = GetTime and GetTime() or 0
+	if self.lastMaster and now - self.lastMaster < 0.5 then
+		return
+	end
+	self.lastMaster = now
+	local target = self:LootTarget()
+	if not target then
+		return
+	end
+	local count = 0
+	if GetNumLootItems then
+		local ok, num = pcall(GetNumLootItems)
+		count = ok and tonumber(num) or 0
+	end
+	local given = 0
+	local missed = false
+	for slot = count, 1, -1 do
+		if self:IsLootItem(slot) then
+			local index = self:CandidateIndex(slot, target)
+			if index and pcall(GiveMasterLoot, slot, index) then
+				given = given + 1
+			else
+				missed = true
+			end
+		end
+	end
+	local who = OL:ShortName(target)
+	if given > 0 then
+		OL:Print("Master looted " .. given .. " to " .. who .. ".")
+	end
+	if missed then
+		OL:Print("Couldn't master loot every item to " .. who .. ".")
+	end
 end
 
 function Raid:OnComm(sender, op, fields)
@@ -268,14 +528,22 @@ function Raid:OnComm(sender, op, fields)
 	end
 	local on = fields[1] == "1"
 	local wasOn = self:IsOn()
+	local wasCollecting = self.collecting and true or false
 	if on then
 		if self:IsRunner() then
 			return
 		end
-		OL.db.activeRaid = { on = true, mapID = mapID(), isRunner = false }
-		self:SyncRollListen()
-		self:ApplyRaiderPass()
-		if not wasOn then
+		local mule = fields[3]
+		if mule == "" then
+			mule = nil
+		end
+		OL.db.activeRaid = { on = true, mapID = mapID(), isRunner = false, mule = mule }
+		self:ApplyLootRole()
+		if self:IsCollector() then
+			if not wasCollecting then
+				OL:Print("You will automatically need on loot.")
+			end
+		elseif not wasOn or wasCollecting then
 			OL:Print("Pass on Loot is on for this OpenLoot raid.")
 		end
 	else

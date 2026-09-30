@@ -153,17 +153,10 @@ function Council:Info(name)
 		return nil
 	end
 	local short = OL:ShortName(name)
-	if OL.devCouncil and OL.devCouncil[short] then
-		return OL.devCouncil[short]
-	end
 	return self.byShort[short]
 end
 
 function Council:IsLocalCouncil()
-	if OL.devMode then
-		local info = self:Info(OL:FullName("player"))
-		return info and info.council or false
-	end
 	if not IsInRaid() then
 		return false
 	end
