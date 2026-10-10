@@ -33,7 +33,7 @@ function Versions:Announce()
 	if not IsInGroup() then
 		return
 	end
-	OL.Comms:Send("ver\31" .. OL:Version())
+	OL.Comms:Send("W" .. OL.Comms.SEP .. OL:Version())
 end
 
 function Versions:Query(report)
@@ -41,7 +41,7 @@ function Versions:Query(report)
 	self.waiting = true
 	self:Announce()
 	if IsInGroup() then
-		OL.Comms:Send("verq")
+		OL.Comms:Send("w")
 	end
 	if self.timer then
 		self.timer:Cancel()
@@ -56,11 +56,7 @@ function Versions:Query(report)
 		self:Refresh()
 		self:Summarize()
 	end
-	if C_Timer.NewTimer then
-		self.timer = C_Timer.NewTimer(4, finish)
-	else
-		C_Timer.After(4, finish)
-	end
+	self.timer = C_Timer.NewTimer(4, finish)
 end
 
 function Versions:Summarize()
@@ -72,7 +68,7 @@ function Versions:Summarize()
 		OL:Print("You are on OpenLoot " .. OL:Version() .. ".")
 		return
 	end
-	local mine = OL:ShortName(OL:FullName("player"))
+	local mine = OL:Me()
 	local old, missing = {}, {}
 	for _, member in ipairs(OL.Session:Roster()) do
 		local short = OL:ShortName(member.name)
@@ -217,7 +213,7 @@ function Versions:Refresh()
 		local short = OL:ShortName(member.name)
 		local known = self.known[short]
 		local text, red, green, blue = self:Status(known)
-		local mine = OL:ShortName(OL:FullName("player"))
+		local mine = OL:Me()
 		local behind = short ~= mine and ((not known and not self.waiting) or (known and OL:CompareVersion(known, OL:Version()) < 0))
 		row.name:SetText(short)
 		row.name:SetTextColor(OL.UI:ClassColor(member.classFile))
@@ -273,11 +269,13 @@ function Versions:CreateRow(parent)
 end
 
 function Versions:OnComm(sender, op, fields)
-	if op == "verq" then
+	if op == "w" then
 		self:Announce()
 		return
 	end
-	if op == "ver" then
+	if op == "W" then
 		self:Remember(sender, fields[1])
 	end
 end
+
+OL.Comms:Route(Versions, "W", "w")

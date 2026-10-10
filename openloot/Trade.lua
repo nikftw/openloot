@@ -26,9 +26,6 @@ local function sameLink(left, right)
 	if left == right then
 		return true
 	end
-	if not C_Item.GetItemInfoInstant then
-		return false
-	end
 	local leftID = C_Item.GetItemInfoInstant(left)
 	local rightID = C_Item.GetItemInfoInstant(right)
 	return leftID and leftID == rightID
@@ -44,55 +41,21 @@ function Trade:Init()
 	self:SyncListen()
 end
 
-function Trade:EnsureEvents()
-	if self.events then
-		return
-	end
-	self.events = CreateFrame("Frame")
-	self.events:SetScript("OnEvent", function(_, event, ...)
-		if event == "TRADE_SHOW" then
-			self:OnTradeShow()
-		elseif event == "TRADE_CLOSED" then
-			self:OnTradeClosed()
-		elseif event == "TRADE_ACCEPT_UPDATE" then
-			self:OnAccept()
-		elseif event == "UI_INFO_MESSAGE" then
-			self:OnInfo(...)
-		end
-	end)
-end
-
-function Trade:Listen(eventName, enabled)
-	self.registered = self.registered or {}
-	if enabled then
-		if self.registered[eventName] then
-			return
-		end
-		self:EnsureEvents()
-		if pcall(self.events.RegisterEvent, self.events, eventName) then
-			self.registered[eventName] = true
-		end
-	elseif self.registered[eventName] then
-		self.registered[eventName] = nil
-		pcall(self.events.UnregisterEvent, self.events, eventName)
-	end
-end
-
 function Trade:WatchInfo(on)
 	if on and self.infoTimer then
 		self.infoTimer:Cancel()
 		self.infoTimer = nil
 	end
-	self:Listen("UI_INFO_MESSAGE", on)
+	OL:Listen("UI_INFO_MESSAGE", on)
 end
 
 function Trade:SyncListen()
-	local watch = self.list and #self.list > 0
-	self:Listen("TRADE_SHOW", watch)
-	self:Listen("TRADE_CLOSED", watch)
-	self:Listen("TRADE_ACCEPT_UPDATE", watch)
+	local watch = self.list and #self.list > 0 or false
+	OL:Listen("TRADE_SHOW", watch)
+	OL:Listen("TRADE_CLOSED", watch)
+	OL:Listen("TRADE_ACCEPT_UPDATE", watch)
 	if not watch then
-		self:Listen("UI_INFO_MESSAGE", false)
+		OL:Listen("UI_INFO_MESSAGE", false)
 	end
 end
 
@@ -103,7 +66,7 @@ end
 
 function Trade:Holds(item)
 	local holder = item and item.holder and OL:ShortName(item.holder) or ""
-	return holder ~= "" and holder == OL:ShortName(OL:FullName("player"))
+	return holder ~= "" and holder == OL:Me()
 end
 
 function Trade:Add(item, winner, sessionId, index)
@@ -111,34 +74,33 @@ function Trade:Add(item, winner, sessionId, index)
 		return
 	end
 	local short = OL:ShortName(winner)
-	if short == "" or short == OL:ShortName(OL:FullName("player")) then
+	if short == "" or short == OL:Me() then
 		return
 	end
+	-- The holder's own scan says where the item sat, and has the bag's own link.
+	local held = item.ref and OL.db.scan and OL.db.scan[item.ref]
+	if held and not sameLink(held.link, item.link) then
+		held = nil
+	end
 	local key = tostring(sessionId or "") .. ":" .. tostring(index or item.link)
-	for _, entry in ipairs(self.list) do
-		if entry.key == key then
-			entry.winner = short
-			entry.link = item.link
-			entry.texture = item.texture
-			entry.bag = item.bag
-			entry.slot = item.slot
-			entry.guid = item.guid
-			self:Save()
-			self:Show()
-			return
+	local entry
+	for _, existing in ipairs(self.list) do
+		if existing.key == key then
+			entry = existing
+			break
 		end
 	end
-	self.list[#self.list + 1] = {
-		key = key,
-		link = item.link,
-		texture = item.texture,
-		winner = short,
-		bag = item.bag,
-		slot = item.slot,
-		guid = item.guid,
-	}
+	if not entry then
+		entry = { key = key }
+		self.list[#self.list + 1] = entry
+	end
+	entry.winner = short
+	entry.link = held and held.link or item.link
+	entry.texture = item.texture
+	entry.bag = held and held.bag
+	entry.slot = held and held.slot
+	entry.guid = held and held.guid
 	self:Save()
-	OL:Print("Trade " .. item.link .. " to " .. short .. ".")
 	self:Show()
 end
 
@@ -177,8 +139,8 @@ function Trade:WatchRange(on)
 		self.rangeTimer:Cancel()
 		self.rangeTimer = nil
 	end
-	if on and C_Timer.NewTicker then
-		self.rangeTimer = C_Timer.NewTicker(0.5, function()
+	if on then
+		self.rangeTimer = C_Timer.NewTicker(1, function()
 			self:PaintRange()
 		end)
 	end
@@ -200,12 +162,8 @@ function Trade:Ensure()
 end
 
 function Trade:ClassOf(name)
-	for _, member in ipairs(OL.Session:Roster()) do
-		if OL:ShortName(member.name) == name then
-			return member.classFile
-		end
-	end
-	return nil
+	local member = OL:Roster().byShort[name]
+	return member and member.classFile or nil
 end
 
 function Trade:InRange(name)

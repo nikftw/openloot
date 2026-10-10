@@ -8,12 +8,16 @@ UI.FONT = "Fonts\\ARIALN.ttf"
 UI.FONT_SIZE = 12
 
 function UI:Pixel()
+	if self.pixel then
+		return self.pixel
+	end
 	local _, height = GetPhysicalScreenSize()
 	local scale = UIParent:GetEffectiveScale()
 	if not height or height == 0 or not scale or scale == 0 then
 		return 1
 	end
-	return (768 / height) / scale
+	self.pixel = (768 / height) / scale
+	return self.pixel
 end
 
 function UI:Snap(value)
@@ -165,6 +169,10 @@ function UI:Icon(parent, size)
 		texture:SetTexCoord(crop[1], crop[2], crop[3], crop[4])
 	end
 	function holder:SetIcon(icon)
+		if icon ~= nil and icon == self.icon then
+			return
+		end
+		self.icon = icon
 		local missing = missingIcon(icon)
 		self.crop = missing and UI.UNKNOWN_CROP or UI.ICON_CROP
 		if missing then
@@ -173,34 +181,16 @@ function UI:Icon(parent, size)
 			texture:SetTexture(icon)
 		end
 		self:ApplyCrop()
-		if C_Timer and C_Timer.After then
-			C_Timer.After(0, function()
-				local shown = texture:GetTexture()
-				if missingIcon(shown) then
-					holder.crop = UI.UNKNOWN_CROP
-					if shown ~= UI.UNKNOWN_ICON then
-						texture:SetTexture(UI.UNKNOWN_ICON)
-					end
+		C_Timer.After(0, function()
+			local shown = texture:GetTexture()
+			if missingIcon(shown) then
+				holder.crop = UI.UNKNOWN_CROP
+				if shown ~= UI.UNKNOWN_ICON then
+					texture:SetTexture(UI.UNKNOWN_ICON)
 				end
-				holder:ApplyCrop()
-			end)
-		end
-	end
-	function holder:SetEdge(red, green, blue)
-		local edge = UI:Pixel()
-		holder:SetBackdrop({ bgFile = UI.WHITE })
-		holder:SetBackdropColor(0, 0, 0, 1)
-		UI:Hairline(holder, red, green, blue, 1)
-		texture:ClearAllPoints()
-		texture:SetPoint("TOPLEFT", edge, -edge)
-		texture:SetPoint("BOTTOMRIGHT", -edge, edge)
-	end
-	function holder:ClearEdge()
-		holder:SetBackdrop({ bgFile = UI.WHITE })
-		holder:SetBackdropColor(0, 0, 0, 1)
-		UI:ClearHairline(holder)
-		texture:ClearAllPoints()
-		texture:SetAllPoints()
+			end
+			holder:ApplyCrop()
+		end)
 	end
 	return holder
 end
@@ -351,6 +341,7 @@ function UI:CreateWindow(title, width, height, placeKey)
 		end
 	end
 	frame:HookScript("OnShow", function(self)
+		UI.pixel = nil
 		chrome(self, true)
 		UI:SyncGrip(self)
 		raiseWindow(self)

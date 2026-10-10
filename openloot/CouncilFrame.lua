@@ -21,12 +21,21 @@ local function noteOrder(note)
 	return 1000
 end
 
-local function voteRank(member, item)
-	local short = OL:ShortName(member.name)
-	local vote = item.votes and item.votes[short]
-	local response = vote and vote.response or nil
-	local info = OL.Council:Info(member.name)
-	return response == "PASS", noteOrder(info and info.officerNote or ""), RESPONSE_ORDER[response] or 4, short:lower()
+local function byRank(a, b)
+	if a.pass ~= b.pass then
+		return not a.pass
+	end
+	if a.group ~= b.group then
+		return a.group < b.group
+	end
+	if a.rank ~= b.rank then
+		return a.rank < b.rank
+	end
+	return a.lower < b.lower
+end
+
+local function hideTip()
+	OL.UI:HideTip()
 end
 
 local COLS = {
@@ -94,6 +103,12 @@ function Frame:Ensure()
 	self.disenchant:SetPoint("TOPRIGHT", 0, 0)
 	self.skip = OL.UI:FlatButton(self.main, "Skip", 52, 18)
 	self.skip:SetPoint("TOPRIGHT", self.disenchant, "TOPLEFT", -4, 0)
+	self.skip:SetScript("OnClick", function()
+		OL.Session:Close(self.selected, "skip")
+	end)
+	self.disenchant:SetScript("OnClick", function()
+		OL.Session:Close(self.selected, "disenchant")
+	end)
 	self.itemText = OL.UI:Text(self.main, "OVERLAY", "GameFontHighlight")
 	self.itemText:SetPoint("TOPLEFT", 2 * OL.UI:Pixel(), 0)
 	self.itemText:SetPoint("TOPRIGHT", self.skip, "TOPLEFT", -4, 0)
@@ -215,6 +230,8 @@ function Frame:Refresh()
 		self.frame.expandedHeight = self.frame:GetHeight()
 	end
 
+	local roster = OL.Session:Roster()
+	local total = #roster
 	for index = 1, count do
 		local button = self.icons[index]
 		if not button then
@@ -228,14 +245,12 @@ function Frame:Refresh()
 		button:SetPoint("TOPLEFT", self.iconPane, "TOPLEFT", col * colStep, -row * rowStep)
 		button:SetIcon(item.texture)
 		local responded = 0
-		local roster = OL.Session:Roster()
 		for _, member in ipairs(roster) do
-			local vote = item.votes[OL:ShortName(member.name)]
+			local vote = item.votes[member.short]
 			if vote and vote.response and vote.response ~= "" then
 				responded = responded + 1
 			end
 		end
-		local total = #roster
 		button.count:SetText(responded .. "/" .. total)
 		local done = item.awardedTo or item.closed
 		local complete = total > 0 and responded >= total
@@ -251,14 +266,8 @@ function Frame:Refresh()
 		else
 			button.tint:Hide()
 		end
-		button:ClearEdge()
-		button:SetScript("OnClick", function()
-			self.selected = index
-			self:Refresh()
-		end)
-		button:SetScript("OnEnter", function(selfIcon)
-			OL.UI:ItemTip(selfIcon, item.link)
-		end)
+		button.index = index
+		button.link = item.link
 		button:Show()
 	end
 	for index = count + 1, #self.icons do
@@ -269,14 +278,6 @@ function Frame:Refresh()
 	local open = item and not item.awardedTo and not item.closed
 	self.skip:SetShown(open and true or false)
 	self.disenchant:SetShown(open and true or false)
-	if open then
-		self.skip:SetScript("OnClick", function()
-			OL.Session:Close(self.selected, "skip")
-		end)
-		self.disenchant:SetScript("OnClick", function()
-			OL.Session:Close(self.selected, "disenchant")
-		end)
-	end
 	local namePad = 2 * OL.UI:Pixel()
 	self.itemText:ClearAllPoints()
 	self.itemText:SetPoint("LEFT", self.main, "TOPLEFT", namePad, -9)
@@ -290,7 +291,7 @@ function Frame:Refresh()
 	self.itemIlvl:SetPoint("TOPLEFT", namePad, -22)
 	self.itemIlvl:SetPoint("TOPRIGHT", 0, -22)
 	self.itemIlvl:SetText(item and OL.Items:RowMeta(item) or "")
-	self:FillRoster(item)
+	self:FillRoster(item, item and roster or {})
 end
 
 function Frame:AdvanceFrom(index)
@@ -304,15 +305,23 @@ function Frame:AdvanceFrom(index)
 			self.selected = nextIndex
 		end
 	end
-	self:Refresh()
+end
+
+local function iconClick(button)
+	Frame.selected = button.index
+	Frame:Refresh()
+end
+
+local function iconEnter(button)
+	OL.UI:ItemTip(button, button.link)
 end
 
 function Frame:CreateIcon()
 	local button = OL.UI:Icon(self.iconPane, 36)
 	button:EnableMouse(true)
-	button:SetScript("OnLeave", function()
-		OL.UI:HideTip()
-	end)
+	button:SetScript("OnClick", iconClick)
+	button:SetScript("OnEnter", iconEnter)
+	button:SetScript("OnLeave", hideTip)
 	local tint = button:CreateTexture(nil, "OVERLAY")
 	tint:SetDrawLayer("OVERLAY", 0)
 	tint:SetAllPoints()
@@ -336,24 +345,30 @@ function Frame:CreateIcon()
 	return button
 end
 
-function Frame:FillRoster(item)
-	local roster = item and OL.Session:Roster() or {}
+local sorted = {}
+
+function Frame:FillRoster(item, shared)
+	wipe(sorted)
+	local roster = sorted
 	if item then
-		table.sort(roster, function(a, b)
-			local aPass, aGroup, aRank, aName = voteRank(a, item)
-			local bPass, bGroup, bRank, bName = voteRank(b, item)
-			if aPass ~= bPass then
-				return not aPass
-			end
-			if aGroup ~= bGroup then
-				return aGroup < bGroup
-			end
-			if aRank ~= bRank then
-				return aRank < bRank
-			end
-			return aName < bName
-		end)
+		for index, member in ipairs(shared) do
+			local vote = item.votes[member.short]
+			local response = vote and vote.response or nil
+			local info = OL.Council:Info(member.name)
+			sorted[index] = {
+				name = member.name,
+				short = member.short,
+				classFile = member.classFile,
+				pass = response == "PASS",
+				group = noteOrder(info and info.officerNote or ""),
+				rank = RESPONSE_ORDER[response] or 4,
+				lower = member.short:lower(),
+			}
+		end
+		table.sort(sorted, byRank)
 	end
+	local done = item and (item.awardedTo ~= nil or item.closed ~= nil) or false
+	local mine = OL:Me()
 	local y = 0
 	for rowIndex, member in ipairs(roster) do
 		local row = self.rows[rowIndex]
@@ -361,33 +376,11 @@ function Frame:FillRoster(item)
 			row = self:CreateRow(self.scroll.content)
 			self.rows[rowIndex] = row
 		end
-		local short = OL:ShortName(member.name)
-		local vote = item.votes[short]
-		local info = OL.Council:Info(member.name)
-		local data = {
-			name = short,
-			class = member.classFile,
-			rank = info and info.rankName or "",
-			officerNote = info and info.officerNote or "",
-			response = vote and vote.response or nil,
-			slotIlvl = vote and vote.slotIlvl or nil,
-			diff = vote and vote.diff or nil,
-			note = vote and vote.note or nil,
-			s1 = vote and vote.s1 or nil,
-			s2 = vote and vote.s2 or nil,
-			winner = item.awardedTo == short,
-		}
-		self:FillRow(row, data, item)
-		row.awarded = item.awardedTo ~= nil or item.closed ~= nil
-		if row.awarded then
+		self:FillRow(row, member, item, mine)
+		row.awarded = done
+		if done then
 			row.actions:Hide()
 		end
-		row.actions.vote:SetScript("OnClick", function()
-			OL.Session:CastBallot(self.selected, short)
-		end)
-		row.actions.award:SetScript("OnClick", function()
-			OL.Session:Award(self.selected, short)
-		end)
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT", self.scroll.content, "TOPLEFT", 0, -y)
 		row:SetPoint("RIGHT", self.scroll.content, "RIGHT", 0, 0)
@@ -401,8 +394,60 @@ function Frame:FillRoster(item)
 	self.scroll.content:SetHeight(math.max(1, y))
 end
 
+local function rowOf(widget)
+	while widget and not widget.isCouncilRow do
+		widget = widget:GetParent()
+	end
+	return widget
+end
+
+local function rowEnter(widget)
+	Frame:HoverRow(rowOf(widget))
+end
+
+local function rowLeave(widget)
+	Frame:QueueHoverCheck(rowOf(widget))
+end
+
+local function tipLeave(widget)
+	OL.UI:HideTip()
+	Frame:QueueHoverCheck(rowOf(widget))
+end
+
+local function noteEnter(cell)
+	local row = rowOf(cell)
+	OL.UI:NoteTip(cell, row.note)
+	Frame:HoverRow(row)
+end
+
+local function votesEnter(cell)
+	local row = rowOf(cell)
+	Frame:HoverRow(row)
+	if not row.voters then
+		return
+	end
+	GameTooltip:SetOwner(cell, "ANCHOR_RIGHT")
+	GameTooltip:AddLine("Votes", 1, 1, 1)
+	GameTooltip:AddLine(row.voters, 0.9, 0.9, 0.9, true)
+	GameTooltip:Show()
+end
+
+local function gearEnter(icon)
+	OL.UI:ItemTip(icon, icon.link)
+	Frame:HoverRow(rowOf(icon))
+end
+
+local function voteClick(button)
+	OL.Session:CastBallot(Frame.selected, rowOf(button).short)
+end
+
+local function awardClick(button)
+	OL.Session:Award(Frame.selected, rowOf(button).short)
+end
+
 function Frame:CreateRow(parent)
 	local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+	row.isCouncilRow = true
 	row:SetHeight(OL.UI:P(26))
 	row:SetBackdrop({ bgFile = OL.UI.WHITE })
 	row:SetBackdropColor(0.1, 0.1, 0.12, 1)
@@ -413,20 +458,28 @@ function Frame:CreateRow(parent)
 		cell:SetPoint("LEFT", row, "LEFT", left, 0)
 		cell:SetSize(width, OL.UI:P(26))
 		cell:SetClipsChildren(true)
-		cell:EnableMouse(col.key == "playerNote")
+		cell:EnableMouse(col.key == "playerNote" or col.key == "votes")
 		if col.key == "playerNote" then
 			cell.icon = cell:CreateTexture(nil, "ARTWORK")
 			cell.icon:SetSize(10, 12)
 			cell.icon:SetPoint("LEFT", 0, 0)
 			cell.icon:SetTexture(OL.UI.WHITE)
 			cell.icon:SetVertexColor(0.45, 0.45, 0.45, 1)
+			cell:SetScript("OnEnter", noteEnter)
+			cell:SetScript("OnLeave", tipLeave)
 		elseif col.key == "s1" or col.key == "s2" then
 			cell.icon = OL.UI:Icon(cell, 18)
 			cell.icon:SetPoint("LEFT", 0, 0)
+			cell.icon:SetScript("OnEnter", gearEnter)
+			cell.icon:SetScript("OnLeave", tipLeave)
 		else
 			cell.text = OL.UI:Text(cell, "OVERLAY", "GameFontHighlightSmall")
 			cell.text:SetAllPoints()
 			cell.text:SetJustifyH("LEFT")
+		end
+		if col.key == "votes" then
+			cell:SetScript("OnEnter", votesEnter)
+			cell:SetScript("OnLeave", tipLeave)
 		end
 		row.cells[col.key] = cell
 	end)
@@ -435,109 +488,81 @@ function Frame:CreateRow(parent)
 	row.actions:SetPoint("RIGHT", -4, 0)
 	row.actions.vote = OL.UI:FlatButton(row.actions, "Vote", 52, 18)
 	row.actions.vote:SetPoint("LEFT", 0, 0)
+	row.actions.vote:SetScript("OnClick", voteClick)
 	row.actions.award = OL.UI:FlatButton(row.actions, "Award", 58, 18)
 	row.actions.award:SetPoint("LEFT", row.actions.vote, "RIGHT", 4, 0)
+	row.actions.award:SetScript("OnClick", awardClick)
 	row.actions:EnableMouse(true)
 	row.actions:Hide()
-	local function enter()
-		Frame:HoverRow(row)
-	end
-	local function leave()
-		Frame:QueueHoverCheck(row)
-	end
-	row:SetScript("OnEnter", enter)
-	row:SetScript("OnLeave", leave)
-	row.actions:SetScript("OnEnter", enter)
-	row.actions:SetScript("OnLeave", leave)
-	row.actions.vote:HookScript("OnEnter", enter)
-	row.actions.vote:HookScript("OnLeave", leave)
-	row.actions.award:HookScript("OnEnter", enter)
-	row.actions.award:HookScript("OnLeave", leave)
+	row:SetScript("OnEnter", rowEnter)
+	row:SetScript("OnLeave", rowLeave)
+	row.actions:SetScript("OnEnter", rowEnter)
+	row.actions:SetScript("OnLeave", rowLeave)
+	row.actions.vote:HookScript("OnEnter", rowEnter)
+	row.actions.vote:HookScript("OnLeave", rowLeave)
+	row.actions.award:HookScript("OnEnter", rowEnter)
+	row.actions.award:HookScript("OnLeave", rowLeave)
 	return row
 end
 
-function Frame:FillRow(row, data, item)
-	local name = row.cells.name
-	name.text:SetText(data.winner and ("* " .. OL:ShortName(data.name)) or OL:ShortName(data.name))
-	name.text:SetTextColor(OL.UI:ClassColor(data.class))
-	row.cells.rank.text:SetText(data.rank or "")
-	row.cells.officerNote.text:SetText(data.officerNote or "")
-	row.cells.response.text:SetText(data.response and OL:ResponseText(data.response) or "")
-	local hasNote = data.note and data.note ~= ""
-	if hasNote then
+function Frame:FillRow(row, member, item, mine)
+	local short = member.short
+	local vote = item.votes[short]
+	local info = OL.Council:Info(member.name)
+	row.short = short
+	row.note = vote and vote.note or nil
+	row.cells.name.text:SetText(item.awardedTo == short and ("* " .. short) or short)
+	row.cells.name.text:SetTextColor(OL.UI:ClassColor(member.classFile))
+	row.cells.rank.text:SetText(info and info.rankName or "")
+	row.cells.officerNote.text:SetText(info and info.officerNote or "")
+	row.cells.response.text:SetText(vote and vote.response and OL:ResponseText(vote.response) or "")
+	if row.note and row.note ~= "" then
 		row.cells.playerNote.icon:SetVertexColor(1, 1, 1, 1)
 	else
 		row.cells.playerNote.icon:SetVertexColor(0.45, 0.45, 0.45, 1)
 	end
-	row.cells.playerNote:SetScript("OnEnter", function(cell)
-		OL.UI:NoteTip(cell, data.note)
-		self:HoverRow(row)
-	end)
-	row.cells.playerNote:SetScript("OnLeave", function()
-		OL.UI:HideTip()
-		self:QueueHoverCheck(row)
-	end)
-	row.cells.slotIlvl.text:SetText(data.slotIlvl and tostring(data.slotIlvl) or "")
-	row.cells.diff.text:SetText(OL.UI:DiffText(data.diff))
-	local red, green, blue = OL.UI:DiffColor(data.diff)
-	row.cells.diff.text:SetTextColor(red, green, blue)
-	self:GearCell(row.cells.s1, data.s1, row)
-	self:GearCell(row.cells.s2, data.s2, row)
-	self:FillVotes(row, item, data.name)
+	row.cells.slotIlvl.text:SetText(vote and vote.slotIlvl and tostring(vote.slotIlvl) or "")
+	local diff = vote and vote.slotIlvl and item.ilvl and item.ilvl > 0 and (item.ilvl - vote.slotIlvl) or nil
+	row.cells.diff.text:SetText(OL.UI:DiffText(diff))
+	row.cells.diff.text:SetTextColor(OL.UI:DiffColor(diff))
+	self:GearCell(row.cells.s1, vote and OL.Items:Unpack(vote.s1))
+	self:GearCell(row.cells.s2, vote and OL.Items:Unpack(vote.s2))
+	self:FillVotes(row, item, short, mine)
 	row.item = item
 end
 
-function Frame:FillVotes(row, item, name)
+local voterScratch = {}
+
+function Frame:FillVotes(row, item, name, mine)
 	local ballots = item and item.ballots or {}
-	local names = {}
+	wipe(voterScratch)
 	for voter, choice in pairs(ballots) do
 		if choice == name then
-			names[#names + 1] = OL:ShortName(voter)
+			voterScratch[#voterScratch + 1] = voter
 		end
 	end
-	table.sort(names)
+	local count = #voterScratch
+	if count > 0 then
+		table.sort(voterScratch)
+		row.voters = table.concat(voterScratch, ", ")
+	else
+		row.voters = nil
+	end
 	local cell = row.cells.votes
-	cell.text:SetText(#names > 0 and tostring(#names) or "")
-	local mine = OL:ShortName(OL:FullName("player"))
+	cell.text:SetText(count > 0 and tostring(count) or "")
 	if ballots[mine] == name then
 		cell.text:SetTextColor(1, 1, 1)
 	else
 		cell.text:SetTextColor(0.7, 0.7, 0.7)
 	end
-	cell:EnableMouse(true)
-	cell:SetScript("OnEnter", function(self)
-		Frame:HoverRow(row)
-		if #names == 0 then
-			return
-		end
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine("Votes", 1, 1, 1)
-		GameTooltip:AddLine(table.concat(names, ", "), 0.9, 0.9, 0.9, true)
-		GameTooltip:Show()
-	end)
-	cell:SetScript("OnLeave", function()
-		OL.UI:HideTip()
-		Frame:QueueHoverCheck(row)
-	end)
 end
 
-function Frame:GearCell(cell, link, row)
+function Frame:GearCell(cell, link)
 	if link and link ~= "" then
 		cell.icon:Show()
 		local _, _, _, _, icon = C_Item.GetItemInfoInstant(link)
 		cell.icon:SetIcon(icon)
-		cell.icon:SetScript("OnEnter", function(self)
-			OL.UI:ItemTip(self, link)
-			if row then
-				Frame:HoverRow(row)
-			end
-		end)
-		cell.icon:SetScript("OnLeave", function()
-			OL.UI:HideTip()
-			if row then
-				Frame:QueueHoverCheck(row)
-			end
-		end)
+		cell.icon.link = link
 	else
 		cell.icon:Hide()
 	end

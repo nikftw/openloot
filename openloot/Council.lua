@@ -4,6 +4,7 @@ OL.Council = {}
 local Council = OL.Council
 
 local OFFICER_CHAT_SPEAK = 4
+local RANK_READERS = { C_GuildInfo and C_GuildInfo.GuildControlGetRankName, GuildControlGetRankName }
 
 function Council:Init()
 	self.byShort = {}
@@ -11,11 +12,7 @@ end
 
 function Council:RankName(rankIndex, fallback)
 	local order = type(rankIndex) == "number" and (rankIndex + 1) or nil
-	local readers = {
-		C_GuildInfo and C_GuildInfo.GuildControlGetRankName,
-		GuildControlGetRankName,
-	}
-	for _, reader in ipairs(readers) do
+	for _, reader in pairs(RANK_READERS) do
 		if order and reader then
 			local ok, name = pcall(reader, order)
 			if ok and type(name) == "string" and name ~= "" then
@@ -46,31 +43,9 @@ function Council:SeesOfficerChat(rankIndex)
 	return fourth and true or false
 end
 
-function Council:ReadMember(index)
-	local name, rankName, rankIndex, officerNote, isOnline
-	if C_GuildInfo and C_GuildInfo.GetGuildRosterInfo then
-		local ok, info = pcall(C_GuildInfo.GetGuildRosterInfo, index)
-		if ok and type(info) == "table" then
-			name = info.name
-			rankName = info.rankName
-			rankIndex = info.rank
-			officerNote = info.officerNote
-			if info.isOnline ~= nil then
-				isOnline = info.isOnline
-			else
-				isOnline = info.online
-			end
-		end
-	end
-	if not name and GetGuildRosterInfo then
-		name, rankName, rankIndex, _, _, _, _, officerNote, isOnline = GetGuildRosterInfo(index)
-	elseif GetGuildRosterInfo and (type(officerNote) ~= "string" or officerNote == "") then
-		local _, _, _, _, _, _, _, rosterNote = GetGuildRosterInfo(index)
-		if type(rosterNote) == "string" and rosterNote ~= "" then
-			officerNote = rosterNote
-		end
-	end
-	if not name or not isOnline then
+function Council:ReadMember(index, wanted)
+	local name, rankName, rankIndex, _, _, _, _, officerNote, isOnline = GetGuildRosterInfo(index)
+	if not name or not isOnline or not wanted[OL:ShortName(name)] then
 		return nil
 	end
 	if type(officerNote) ~= "string" then
@@ -105,44 +80,23 @@ function Council:EnsureSelf()
 	self:Changed()
 end
 
-function Council:GroupedShort()
-	local grouped = {}
-	if not IsInGroup() then
-		grouped[OL:ShortName(OL:FullName("player"))] = true
-		return grouped
-	end
-	for index = 1, GetNumGroupMembers() do
-		local name
-		if IsInRaid() then
-			name = GetRaidRosterInfo(index)
-		else
-			local unit = index == 1 and "player" or ("party" .. (index - 1))
-			if UnitExists(unit) then
-				name = OL:FullName(unit)
-			end
-		end
-		if name then
-			grouped[OL:ShortName(name)] = true
-		end
-	end
-	return grouped
-end
-
+-- Rank and officer note for everyone in the group, from the guild roster.
+-- Only the council window shows them, so a raider only keeps their own.
 function Council:Rebuild()
 	self.byShort = {}
 	if not IsInGuild() then
 		self:Changed()
 		return
 	end
-	local grouped = self:GroupedShort()
-	local count = GetNumGuildMembers()
-	for index = 1, count do
-		local member = self:ReadMember(index)
+	if not self:IsLocalCouncil() then
+		self:EnsureSelf()
+		return
+	end
+	local grouped = OL:Roster().byShort
+	for index = 1, GetNumGuildMembers() do
+		local member = self:ReadMember(index, grouped)
 		if member then
-			local short = OL:ShortName(member.name)
-			if grouped[short] then
-				self.byShort[short] = member
-			end
+			self.byShort[OL:ShortName(member.name)] = member
 		end
 	end
 	self:Changed()
@@ -160,7 +114,7 @@ function Council:IsLocalCouncil()
 	if not IsInRaid() then
 		return false
 	end
-	local info = self.byShort[OL:ShortName(OL:FullName("player"))]
+	local info = self.byShort[OL:Me()]
 	if info then
 		return info.council and true or false
 	end

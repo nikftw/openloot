@@ -3,7 +3,39 @@ local OL = OpenLoot
 OL.Items = {}
 local Items = OL.Items
 
-local MIN_QUALITY = (Enum and Enum.ItemQuality and Enum.ItemQuality.Rare) or 3
+local MIN_QUALITY = Enum.ItemQuality.Rare
+local ARMOR = Enum.ItemClass.Armor
+local WEAPON = Enum.ItemClass.Weapon
+local SUBCLASS_READERS = { C_Item.GetItemSubClassInfo, GetItemSubClassInfo }
+
+local TRADE_NEEDLE = "You may trade this item"
+if BIND_TRADE_TIME_REMAINING then
+	TRADE_NEEDLE = (BIND_TRADE_TIME_REMAINING:match("^(.-)%%s") or TRADE_NEEDLE):gsub("%s+$", "")
+end
+
+local SLOT_FALLBACK = {
+	INVTYPE_HEAD = "Head",
+	INVTYPE_NECK = "Neck",
+	INVTYPE_SHOULDER = "Shoulder",
+	INVTYPE_CHEST = "Chest",
+	INVTYPE_ROBE = "Chest",
+	INVTYPE_WAIST = "Waist",
+	INVTYPE_LEGS = "Legs",
+	INVTYPE_FEET = "Feet",
+	INVTYPE_WRIST = "Wrist",
+	INVTYPE_HAND = "Hands",
+	INVTYPE_FINGER = "Finger",
+	INVTYPE_TRINKET = "Trinket",
+	INVTYPE_CLOAK = "Back",
+	INVTYPE_WEAPON = "One-Hand",
+	INVTYPE_2HWEAPON = "Two-Hand",
+	INVTYPE_WEAPONMAINHAND = "Main Hand",
+	INVTYPE_WEAPONOFFHAND = "Off Hand",
+	INVTYPE_HOLDABLE = "Off Hand",
+	INVTYPE_SHIELD = "Off Hand",
+	INVTYPE_RANGED = "Ranged",
+	INVTYPE_RANGEDRIGHT = "Ranged",
+}
 
 local ALWAYS_VISIBLE = {
 	INVTYPE_CLOAK = true,
@@ -54,39 +86,64 @@ local ARMOR_SUBCLASS = {
 	WARLOCK = 1,
 }
 
-local tip
-
-local function scanTip()
-	if not tip then
-		tip = CreateFrame("GameTooltip", "OpenLootScanTip", nil, "GameTooltipTemplate")
-		tip:SetOwner(UIParent, "ANCHOR_NONE")
-	end
-	return tip
-end
-
 function Items:IsTradeable(bag, slot)
-	tip = scanTip()
-	tip:ClearLines()
-	local shown = pcall(tip.SetBagItem, tip, bag, slot)
-	if not shown then
+	if TRADE_NEEDLE == "" then
 		return false
 	end
-	local needle = "You may trade this item"
-	if BIND_TRADE_TIME_REMAINING then
-		needle = BIND_TRADE_TIME_REMAINING:match("^(.-)%%s") or needle
-		needle = needle:gsub("%s+$", "")
-	end
-	if needle == "" then
-		return false
-	end
-	for line = 1, tip:NumLines() do
-		local fontString = _G["OpenLootScanTipTextLeft" .. line]
-		local text = fontString and fontString:GetText()
-		if text and text:find(needle, 1, true) then
+	local data = C_TooltipInfo.GetBagItem(bag, slot)
+	for _, line in ipairs(data and data.lines or {}) do
+		local text = line.leftText
+		if type(text) == "string" and text:find(TRADE_NEEDLE, 1, true) then
 			return true
 		end
 	end
 	return false
+end
+
+-- Item links travel as their item string, minus "item:" and trailing colons.
+function Items:Pack(link)
+	local itemString = type(link) == "string" and link:match("item:([%-%d:]+)")
+	return itemString and (itemString:gsub(":+$", "")) or ""
+end
+
+function Items:Unpack(packed)
+	if not packed or packed == "" then
+		return nil
+	end
+	return "item:" .. packed
+end
+
+-- The full link when this client knows the item, else a stand-in link that
+-- still shows a tooltip. The second value says whether the link is the real one.
+function Items:Link(itemString)
+	if not itemString then
+		return nil, true
+	end
+	local _, link = C_Item.GetItemInfo(itemString)
+	if link then
+		return link, true
+	end
+	local itemID = C_Item.GetItemInfoInstant(itemString)
+	if not itemID then
+		return nil, true
+	end
+	return "|cffffffff|H" .. itemString .. "|h[" .. itemID .. "]|h|r", false
+end
+
+function Items:WhenLoaded(itemString, callback)
+	local itemID = C_Item.GetItemInfoInstant(itemString)
+	if itemID then
+		Item:CreateFromItemID(itemID):ContinueOnItemLoad(callback)
+	end
+end
+
+function Items:Describe(item)
+	local _, _, _, equipLoc, texture, classID, subClassID = C_Item.GetItemInfoInstant(item.link)
+	item.equipLoc = equipLoc or ""
+	item.texture = texture
+	item.classID = classID
+	item.subClassID = subClassID
+	return item
 end
 
 function Items:SlotLabel(equipLoc)
@@ -97,38 +154,14 @@ function Items:SlotLabel(equipLoc)
 	if type(globalName) == "string" and globalName ~= "" then
 		return globalName
 	end
-	local fallback = {
-		INVTYPE_HEAD = "Head",
-		INVTYPE_NECK = "Neck",
-		INVTYPE_SHOULDER = "Shoulder",
-		INVTYPE_CHEST = "Chest",
-		INVTYPE_ROBE = "Chest",
-		INVTYPE_WAIST = "Waist",
-		INVTYPE_LEGS = "Legs",
-		INVTYPE_FEET = "Feet",
-		INVTYPE_WRIST = "Wrist",
-		INVTYPE_HAND = "Hands",
-		INVTYPE_FINGER = "Finger",
-		INVTYPE_TRINKET = "Trinket",
-		INVTYPE_CLOAK = "Back",
-		INVTYPE_WEAPON = "One-Hand",
-		INVTYPE_2HWEAPON = "Two-Hand",
-		INVTYPE_WEAPONMAINHAND = "Main Hand",
-		INVTYPE_WEAPONOFFHAND = "Off Hand",
-		INVTYPE_HOLDABLE = "Off Hand",
-		INVTYPE_SHIELD = "Off Hand",
-		INVTYPE_RANGED = "Ranged",
-		INVTYPE_RANGEDRIGHT = "Ranged",
-	}
-	return fallback[equipLoc] or ""
+	return SLOT_FALLBACK[equipLoc] or ""
 end
 
 function Items:TypeLabel(classID, subClassID)
 	if classID == nil or subClassID == nil then
 		return ""
 	end
-	local readers = { C_Item and C_Item.GetItemSubClassInfo, GetItemSubClassInfo }
-	for _, reader in ipairs(readers) do
+	for _, reader in pairs(SUBCLASS_READERS) do
 		if reader then
 			local ok, name = pcall(reader, classID, subClassID)
 			if ok and type(name) == "string" and name ~= "" then
@@ -152,8 +185,7 @@ function Items:RowMeta(item)
 		parts[#parts + 1] = trim(tostring(item.ilvl))
 	end
 	local typeName = trim(self:TypeLabel(item.classID, item.subClassID))
-	local armorClass = Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4
-	local misc = item.classID == armorClass and item.subClassID == 0
+	local misc = item.classID == ARMOR and item.subClassID == 0
 	if not misc and typeName ~= "" then
 		local lower = typeName:lower()
 		if lower ~= "miscellaneous" and lower ~= "misc" then
@@ -171,12 +203,10 @@ function Items:PlayerCanUse(link, equipLoc, classID, subClassID)
 	if ALWAYS_VISIBLE[equipLoc] then
 		return true
 	end
-	local armorClass = Enum and Enum.ItemClass and Enum.ItemClass.Armor or 4
-	local weaponClass = Enum and Enum.ItemClass and Enum.ItemClass.Weapon or 2
-	if classID ~= armorClass and classID ~= weaponClass then
+	if classID ~= ARMOR and classID ~= WEAPON then
 		return true
 	end
-	if classID == armorClass and subClassID and subClassID >= 1 and subClassID <= 4 then
+	if classID == ARMOR and subClassID and subClassID >= 1 and subClassID <= 4 then
 		local _, classFile = UnitClass("player")
 		local heaviest = ARMOR_SUBCLASS[classFile]
 		if not heaviest then
@@ -184,7 +214,7 @@ function Items:PlayerCanUse(link, equipLoc, classID, subClassID)
 		end
 		return subClassID <= heaviest
 	end
-	if link and C_PlayerInfo and C_PlayerInfo.CanUseItem then
+	if link then
 		local itemID = C_Item.GetItemInfoInstant(link)
 		if itemID then
 			local ok, canUse = pcall(C_PlayerInfo.CanUseItem, itemID)
@@ -209,45 +239,25 @@ function Items:ItemLevel(link, location)
 	return nil
 end
 
-function Items:ScanBags(allItems)
+-- Every rare-or-better item in the bags that can still change hands, with
+-- where it sits so the holder can find it again to trade.
+function Items:ScanBags()
 	local found = {}
-	local maxBag = NUM_BAG_SLOTS or 4
-	for bag = 0, maxBag do
-		local slots = C_Container.GetContainerNumSlots(bag) or 0
-		for slot = 1, slots do
+	for bag = 0, NUM_BAG_SLOTS do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) do
 			local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
 			if C_Item.DoesItemExist(location) then
 				local link = C_Container.GetContainerItemLink(bag, slot)
 				local quality = C_Item.GetItemQuality(location)
-				local take = false
-				if link and allItems then
-					take = true
-				elseif link and quality and quality >= MIN_QUALITY then
-					local bound = C_Item.IsBound(location)
-					take = not bound or self:IsTradeable(bag, slot)
-				end
-				if take then
-					local _, _, _, equipLoc, icon, classID, subClassID = C_Item.GetItemInfoInstant(link)
-					local guid
-					if C_Item.GetItemGUID then
-						local ok, value = pcall(C_Item.GetItemGUID, location)
-						if ok and type(value) == "string" and value ~= "" then
-							guid = value
-						end
-					end
+				if link and quality and quality >= MIN_QUALITY
+					and (not C_Item.IsBound(location) or self:IsTradeable(bag, slot)) then
+					local ok, guid = pcall(C_Item.GetItemGUID, location)
 					found[#found + 1] = {
 						link = link,
 						ilvl = self:ItemLevel(link, location) or 0,
-						texture = icon,
-						equipLoc = equipLoc or "",
-						quality = quality,
-						classID = classID,
-						subClassID = subClassID,
 						bag = bag,
 						slot = slot,
-						guid = guid,
-						votes = {},
-						ballots = {},
+						guid = ok and type(guid) == "string" and guid ~= "" and guid or nil,
 					}
 				end
 			end
@@ -310,7 +320,7 @@ function Items:FindTradeSlot(entry, reserved)
 		return bag and slot and not reserved[bag .. ":" .. slot]
 	end
 	local function guidAt(bag, slot)
-		if not entry.guid or not C_Item.GetItemGUID then
+		if not entry.guid then
 			return nil
 		end
 		local location = ItemLocation:CreateFromBagAndSlot(bag, slot)
@@ -341,11 +351,9 @@ function Items:FindTradeSlot(entry, reserved)
 			return entry.bag, entry.slot
 		end
 	end
-	local maxBag = NUM_BAG_SLOTS or 4
 	local linkBag, linkSlot
-	for bag = 0, maxBag do
-		local slots = C_Container.GetContainerNumSlots(bag) or 0
-		for slot = 1, slots do
+	for bag = 0, NUM_BAG_SLOTS do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) do
 			if free(bag, slot) then
 				if sameGuid(bag, slot) then
 					return bag, slot
@@ -362,9 +370,10 @@ end
 
 function Items:CleanNote(text)
 	text = text or ""
-	text = text:gsub("[\31\r\n]", " ")
+	text = text:gsub("%c", " ")
 	if #text > 80 then
-		text = text:sub(1, 80)
+		-- Cut on a character boundary, never inside a multi-byte one.
+		text = text:sub(1, 80):gsub("[\192-\255][\128-\191]*$", "")
 	end
 	return text
 end

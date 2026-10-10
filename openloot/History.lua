@@ -7,12 +7,15 @@ function History:Init()
 	self.selected = nil
 end
 
-function History:Ensure(id, when)
+function History:Ensure(id, when, instance, mapID)
 	local store = OL.db.history
-	if store.sessions[id] then
-		return store.sessions[id]
+	local existing = store.sessions[id]
+	if existing then
+		existing.instance = existing.instance or instance
+		existing.mapID = existing.mapID or mapID
+		return existing
 	end
-	local entry = { id = id, time = when or time(), awards = {} }
+	local entry = { id = id, time = when or time(), instance = instance, mapID = mapID, awards = {} }
 	store.sessions[id] = entry
 	table.insert(store.order, 1, id)
 	self.selected = id
@@ -41,7 +44,19 @@ function History:ItemParts(link)
 	return itemString, itemID
 end
 
-function History:Record(id, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
+local function classOf(name)
+	local member = OL:Roster().byShort[OL:ShortName(name)]
+	return member and member.classFile or ""
+end
+
+-- gear1 and gear2 are the winner's equipped items, packed or as links.
+function History:Record(id, index, winner, link, response, when, votes, gear1, gear2, note)
+	local function full(gear)
+		if gear and gear ~= "" and not gear:find("item:", 1, true) then
+			gear = OL.Items:Unpack(gear)
+		end
+		return gear and (OL.Items:Link(gear)) or ""
+	end
 	return {
 		index = index,
 		id = id,
@@ -50,42 +65,26 @@ function History:Record(id, index, winner, link, response, when, class, votes, i
 		response = response or "",
 		time = when or time(),
 		votes = votes,
-		class = class or "",
-		instance = instance or "",
-		mapID = mapID or "",
-		gear1 = gear1 or "",
-		gear2 = gear2 or "",
+		class = classOf(winner),
+		gear1 = full(gear1),
+		gear2 = full(gear2),
 		note = note or "",
 	}
 end
 
+-- What the awarding officer knows about an award: the council votes for the
+-- winner, and the winner's gear and note from their response.
 function History:Capture(sessionId, index, item, winner, response, when)
-	local link = item and item.link or ""
 	local short = OL:ShortName(winner)
-	local vote = item and item.votes and item.votes[short]
+	local vote = item.votes[short]
 	local votes = 0
-	if item and item.ballots then
-		for _, choice in pairs(item.ballots) do
-			if choice == short then
-				votes = votes + 1
-			end
+	for _, choice in pairs(item.ballots) do
+		if choice == short then
+			votes = votes + 1
 		end
 	end
-	local classFile = ""
-	if OL.Session and OL.Session.Roster then
-		for _, member in ipairs(OL.Session:Roster()) do
-			if OL:ShortName(member.name) == short then
-				classFile = member.classFile or ""
-				break
-			end
-		end
-	end
-	local instance, _, _, _, _, _, _, map = GetInstanceInfo()
-	return self:Record(sessionId, index, short, link, response, when, classFile, votes, instance, map, vote and vote.s1, vote and vote.s2, vote and vote.note)
-end
-
-function History:FromWire(sessionId, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
-	return self:Record(sessionId, index, winner, link, response, when, class, votes, instance, mapID, gear1, gear2, note)
+	return self:Record(sessionId, index, short, item.link, response, when, votes,
+		vote and vote.s1, vote and vote.s2, vote and vote.note)
 end
 
 function History:AddAward(sessionId, award)
@@ -176,17 +175,6 @@ function History:EnsureFrame()
 	self.scroll = scroll
 end
 
-function History:ItemLabel(link)
-	if not link or link == "" then
-		return ""
-	end
-	local name = link:match("%[(.-)%]")
-	if name and name ~= "" then
-		return name
-	end
-	return link
-end
-
 function History:CsvCell(text)
 	text = tostring(text or ""):gsub('"', '""')
 	return '"' .. text .. '"'
@@ -211,8 +199,8 @@ function History:Csv()
 			self:CsvCell(award.response and OL:ResponseText(award.response) or ""),
 			self:CsvCell(award.votes ~= nil and tostring(award.votes) or ""),
 			self:CsvCell(award.class or ""),
-			self:CsvCell(award.instance or ""),
-			self:CsvCell(award.mapID ~= nil and award.mapID ~= "" and tostring(award.mapID) or ""),
+			self:CsvCell(session.instance or ""),
+			self:CsvCell(session.mapID and tostring(session.mapID) or ""),
 			self:CsvCell(award.gear1 or ""),
 			self:CsvCell(award.gear2 or ""),
 			self:CsvCell(award.note or ""),
@@ -326,11 +314,7 @@ function History:Refresh()
 			self.awardRows[index] = row
 		end
 		local award = entry.award
-		local icon
-		if award.link and C_Item.GetItemInfoInstant(award.link) then
-			icon = select(5, C_Item.GetItemInfoInstant(award.link))
-		end
-		row.icon:SetIcon(icon)
+		row.icon:SetIcon(award.link ~= "" and select(5, C_Item.GetItemInfoInstant(award.link)) or nil)
 		row.name:SetText(OL:ShortName(award.winner or ""))
 		row.time:SetText(date("%d %b %H:%M", award.time or entry.session.time))
 		row.link:SetText(award.link or "")

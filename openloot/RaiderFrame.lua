@@ -358,6 +358,28 @@ function Frame:CreateRow(parent)
 	row.icon:SetScript("OnLeave", function()
 		OL.UI:HideTip()
 	end)
+	for _, button in ipairs(row.buttons) do
+		button:SetScript("OnClick", function()
+			local atTop = self:AtTop(row)
+			OL.Session:SetResponse(row.index, button.responseId, row.entry.myNote)
+			if atTop then
+				self:Advance(row)
+			end
+		end)
+	end
+	row.back:SetScript("OnClick", function()
+		OL.Session:ClearResponse(row.index)
+	end)
+	row.save:SetScript("OnClick", function()
+		OL.Session:SetResponse(row.index, row.entry.myResponse, row.noteBox:GetText())
+	end)
+	row.noteBox:SetScript("OnEnterPressed", function(edit)
+		edit:ClearFocus()
+		if row.finished then
+			return
+		end
+		OL.Session:SetResponse(row.index, row.entry.myResponse, edit:GetText())
+	end)
 	return row
 end
 
@@ -372,18 +394,13 @@ function Frame:FillRow(row, index, item)
 	local awarded = item.awardedTo ~= nil
 	local closed = item.closed == "skip" or item.closed == "disenchant"
 	row.finished = awarded or closed
+	row.index = index
+	row.entry = item
 	local locked = item.myResponse ~= nil and not awarded and not closed
 	for _, button in ipairs(row.buttons) do
 		button:SetShown(not locked and not awarded and not closed)
 		button:SetEnabled(not awarded and not closed)
 		button:SetBaseColor(0.16, 0.16, 0.18, 1)
-		button:SetScript("OnClick", function()
-			local atTop = self:AtTop(row)
-			OL.Session:SetResponse(index, button.responseId, item.myNote)
-			if atTop then
-				self:Advance(row)
-			end
-		end)
 	end
 	row.choice:SetShown(locked or awarded or closed)
 	if item.closed == "disenchant" then
@@ -396,25 +413,11 @@ function Frame:FillRow(row, index, item)
 		row.choice:SetText(OL:ResponseText(item.myResponse))
 	end
 	row.back:SetShown(locked)
-	row.back:SetScript("OnClick", function()
-		OL.Session:ClearResponse(index)
-	end)
 	row.noteBox:SetEnabled(not awarded and not closed)
 	row.save:SetShown(not awarded and not closed)
-	row.save:SetScript("OnClick", function()
-		OL.Session:SetResponse(index, item.myResponse, row.noteBox:GetText())
-	end)
 	if not row.noteBox:HasFocus() then
 		row.noteBox:SetText(item.myNote or "")
 	end
-	row.noteBox:SetScript("OnEnterPressed", function(edit)
-		edit:ClearFocus()
-		if awarded or closed then
-			return
-		end
-		OL.Session:SetResponse(index, item.myResponse, edit:GetText())
-	end)
-	row.noteBox:SetScript("OnEditFocusLost", nil)
 	local height = OL.UI:P(ROW_HEIGHT)
 	row:SetHeight(height)
 	return height
