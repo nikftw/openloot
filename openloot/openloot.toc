@@ -1,8 +1,8 @@
-## Interface: 120100
+## Interface: 16001
 ## Title: OpenLoot
 ## Notes: Loot council for raid sessions
 ## Author: OpenLoot
-## Version: 0.5.0
+## Version: 0.5.1
 ## SavedVariables: OpenLootDB
 ## AllowLoadGameType: standard, camelot
 ## Category-enUS: Loot
